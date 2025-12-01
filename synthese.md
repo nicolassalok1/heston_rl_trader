@@ -694,7 +694,7 @@ Sans StateBuilder → ton RL ne fait rien.
 
 ---
 
-### Tu me dis “continue” → CHAPITRE IV : **Environnement RL (TradingEnv)**.
+idem:
 # **IV — ENVIRONNEMENT RL (`TradingEnv`)**
 
 *(C’est la troisième brique critique : le RL interagit avec un environnement comme un trader avec un marché.)*
@@ -898,6 +898,8 @@ Les observations du RL reflètent :
 **C’est un état riche, multi-modèles, multi-niveaux.**
 
 ---
+
+idem :
 # **V — PPO AGENT (POLICY + VALUE FUNCTIONS + GAE + OPTIMISATION)**
 
 *(Le “cerveau” de ton système. C’est lui qui apprend la politique de trading.)*
@@ -1127,6 +1129,8 @@ Mais pour l’instant, c’est parfaitement suffisant.
 ---
 
 ### Tu me dis “continue” → CHAPITRE VI : **Simulateur de marché**.
+
+idem:
 # **VI — SIMULATEUR DE MARCHÉ (simulate_market) : À QUOI IL SERT ET POURQUOI TU DOIS LE TUER UN JOUR**
 
 Ce simulateur est dans :
@@ -1263,7 +1267,10 @@ pour que tu puisses passer du fake → réel.
 ---
 
 ### Tu me dis “continue” → CHAPITRE VII : **train_ppo.py (le run complet)**.
+
+idem:
 # **VII — `train_ppo.py` : COMMENT TOUT LE PROJET TOURNE DE BOUT EN BOUT**
+
 
 C’est le script qui orchestre tout :
 
@@ -1426,6 +1433,7 @@ Dans `train_ppo.py`, à terme tu dois remplacer :
    → vrai SentimentProvider.
 
 ---
+idem:
 # **VIII — DONNÉES RÉELLES : BINANCE + DERIBIT + SENTIMENT + REWARD PRO**
 
 C’est ici qu’on quitte la “maquette” pour construire un système utilisable pour de la vraie recherche.
@@ -1771,6 +1779,8 @@ C’est l’objet du prochain chapitre.
 ---
 
 Tu me dis “continue” → CHAPITRE IX : **Inverseur Heston (training synthétique, réel, mixte)**.
+
+idem:
 # **VIII — DONNÉES RÉELLES : BINANCE + DERIBIT + SENTIMENT + REWARD PRO**
 
 C’est ici qu’on quitte la “maquette” pour construire un système utilisable pour de la vraie recherche.
@@ -2101,6 +2111,7 @@ Tu obtiens alors un reward beaucoup plus proche de ce qu’un risk manager accep
 
 # Transition
 
+
 Tu as maintenant :
 
 * des **données réelles** (Binance + Deribit)
@@ -2116,6 +2127,8 @@ C’est l’objet du prochain chapitre.
 ---
 
 Tu me dis “continue” → CHAPITRE IX : **Inverseur Heston (training synthétique, réel, mixte)**.
+
+
 # **IX — INVERSEUR HESTON (SYNTHÉTIQUE, RÉEL, MIXTE) : LE CŒUR MATHÉMATIQUE DU FRAMEWORK**
 
 On arrive à la brique qui fait que ce projet n’est pas juste un énième RL Crypto bidon :
@@ -2456,6 +2469,9 @@ Pour un projet perso, c’est **massivement au-dessus** de 99% de ce qui traîne
 ---
 
 ### Tu me dis “continue” → CHAPITRE X : **Pricer Heston différentiable & Calibration**.
+
+
+
 # **X — HESTON PRICER DIFFÉRENTIABLE & CALIBRATION (LE LAB DE VOLATILITÉ)**
 
 Ce chapitre couvre la partie “pricing / calibration” que je t’ai ajoutée à ton lab :

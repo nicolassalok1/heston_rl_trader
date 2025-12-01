@@ -1,0 +1,2862 @@
+```latex
+% Plan du document
+\section*{Plan du document}
+
+Je vais suivre ce plan :
+
+\subsection*{I — Contexte général}
+
+\begin{enumerate}
+  \item Origine du projet (fichiers du \texttt{.zip})
+  \item Architecture globale du système
+  \item Objectif final des modules
+\end{enumerate}
+
+\subsection*{II — Feature Engineering System (inclus dans le .zip)}
+
+\begin{enumerate}
+  \item Le FeatureEngine
+  \item Modules :
+  \begin{itemize}
+    \item Shitcoin Module
+    \item BTC Heston Module
+    \item Sentiment Module
+    \item Generic Market Module
+  \end{itemize}
+  \item Fusion des features
+  \item Pourquoi c’est structuré comme ça
+\end{enumerate}
+
+\subsection*{III — StateBuilder (normalisation + stacking)}
+
+\begin{enumerate}
+  \item Pourquoi normaliser online
+  \item Comment le buffer temporel fonctionne
+  \item Sortie finale pour le RL
+\end{enumerate}
+
+\subsection*{IV — Environnement RL (TradingEnv)}
+
+\begin{enumerate}
+  \item Rôle
+  \item Structure interne
+  \item \texttt{Step()} et reward simple
+  \item Limitations de la version initiale
+\end{enumerate}
+
+\subsection*{V — Agent PPO (inclus dans le .zip)}
+
+\begin{enumerate}
+  \item Acteurs + Critic
+  \item Log-probabilities
+  \item GAE + update
+  \item Ce que PPO apprend dans ce contexte
+\end{enumerate}
+
+\subsection*{VI — Simulateur de marché (\texttt{simulate\_market})}
+
+\begin{enumerate}
+  \item Structure
+  \item Limites (car fake)
+  \item Pourquoi destiné à être remplacé
+\end{enumerate}
+
+\subsection*{VII — Le training complet (\texttt{train\_ppo.py})}
+
+\begin{enumerate}
+  \item Architecture end-to-end
+  \item Ce que l’apprentissage apprend réellement
+  \item Limites de l’entraînement sur données simulées
+\end{enumerate}
+
+\subsection*{VIII — Remplacement par données réelles (toutes les briques avancées que tu as demandées)}
+
+\begin{enumerate}
+  \item Loaders Binance
+  \item Loader Deribit
+  \item Stockage en \texttt{.npz}
+  \item Alignment temporel Binance/Deribit
+  \item RealMarketData
+  \item Sentiment réel (squelette)
+  \item RewardEngine financier
+\end{enumerate}
+
+\subsection*{IX — L’inverseur Heston (partie la plus fondamentale)}
+
+\begin{enumerate}
+  \item Pourquoi \texttt{DummyHestonInverse} est une béquille
+  \item Entraînement synthétique (\texttt{train\_inverse\_heston.py})
+  \item Dataset synthétique
+  \item Fine-tuning réel (\texttt{train\_heston\_real.py})
+  \item Entraînement mixte (real + synthetic)
+\end{enumerate}
+
+\subsection*{X — Pricing et Calibration (Heston pricer)}
+
+\begin{enumerate}
+  \item Char function différentiable
+  \item Pricing Heston via intégration
+  \item Calibration via gradient descent
+\end{enumerate}
+
+\subsection*{XI — Comment tout s’assemble}
+
+\begin{enumerate}
+  \item Flux complet réel
+  \item Flux complet RL
+  \item Flux training inverseur
+  \item Ce que tu dois modifier pour faire tourner en réel
+\end{enumerate}
+
+\subsection*{XII — Conclusion}
+
+\begin{enumerate}
+  \item Ce que tu possèdes maintenant
+  \item Ce que tu dois faire ensuite
+  \item Comment t’orienter pour la version production
+\end{enumerate}
+
+Je vais commencer maintenant.  
+Ce sera le \textbf{Chapitre I}, puis j’enchaînerai progressivement.  
+Tu me dis simplement ``continue'' à la fin de chaque message.
+
+\bigskip
+
+%=================================================================
+\section*{I — CONTEXTE GÉNÉRAL DU PROJET}
+%=================================================================
+
+Ce chapitre résume exactement \textbf{d’où vient le projet}, \textbf{pourquoi} je t’ai donné un \texttt{.zip}, et \textbf{ce qu’il contient}, pour que tu comprennes clairement la suite.
+
+\subsection*{1. Origine : tu voulais un framework RL complet avec Heston}
+
+Tu m’as demandé :
+
+\begin{itemize}
+  \item \textbf{Un projet complet},
+  \item \textbf{en C++ ou Python},
+  \item \textbf{prêt à être lancé},
+  \item avec \textbf{Feature Engineering},
+  \item \textbf{StateBuilder},
+  \item \textbf{Environnement RL},
+  \item \textbf{Agent PPO},
+  \item \textbf{Simulateur},
+  \item \textbf{et le zip prêt à télécharger}.
+\end{itemize}
+
+Je t’ai donc construit \textbf{un framework entier}, à la manière d’un ``internal quant research starter-kit'' :
+
+\begin{verbatim}
+heston_rl_trader/
+├─ models/
+├─ features/
+├─ data/
+├─ env/
+├─ rl/
+├─ backtester.py
+├─ live_trading.py
+└─ train_ppo.py
+\end{verbatim}
+
+Ce dépôt reprenait les éléments nécessaires pour faire tourner un agent RL \textbf{sur des données simulées}, avec :
+
+\begin{itemize}
+  \item Inverse Heston modèle (mais dummy),
+  \item Feature engineering avancé,
+  \item RL PPO avec GAE,
+  \item Environnement de trading minimisé.
+\end{itemize}
+
+C’était \textbf{la version prototype}.
+
+\subsection*{2. L’envie d’aller vers du ``réel''}
+
+Tu as ensuite demandé :
+
+\begin{quote}
+``Est-ce que je peux trouver ça sur GitHub ?''
+\end{quote}
+
+Réponse : non, c’est un framework custom.  
+Et tu voulais \textbf{le transformer en pipeline réel} :
+
+\begin{itemize}
+  \item loader Binance (spot, perp, funding, OI),
+  \item loader Deribit (surface IV réelle),
+  \item dataset IV réel,
+  \item sentiment réel,
+  \item reward réaliste,
+  \item inverseur Heston entraîné (pas dummy).
+\end{itemize}
+
+Donc je t’ai donné \textbf{tout ce qu'il faut} pour transformer l’architecture du \texttt{.zip} en système réel type hedge-fund.
+
+\subsection*{3. L’objectif final (ce que ton système deviendra)}
+
+Au final, ton projet est :
+
+\paragraph{Un framework qui te permet :}
+
+\begin{itemize}
+  \item D’extraire des features complexes (Heston, sentiment, market microstructure, IV surface),
+  \item De reconstruire un état RL normalisé,
+  \item De simuler ou trader réellement BTC ou shitcoins,
+  \item De prendre des décisions basées sur un agent PPO,
+  \item De calibrer Heston en différentiable,
+  \item De fine-tuner un inverseur Heston sur données réelles.
+\end{itemize}
+
+C’est \textbf{un environnement total}, combinant :
+
+\begin{itemize}
+  \item Volatility engineering,
+  \item Derivatives microstructure,
+  \item Market data ingestion,
+  \item Time-series synthesis,
+  \item Machine learning (deep),
+  \item Reinforcement Learning,
+  \item Stochastic volatility modeling.
+\end{itemize}
+
+Ce n’est pas un repo pour débutant.  
+C’est un ``quant lab kit''.
+
+\subsection*{4. Pourquoi l’inverseur Heston est le pivot}
+
+Ce projet ne sert à rien sans un inverseur Heston fonctionnel.
+
+Tu as :
+
+\begin{itemize}
+  \item un pipeline RL complet,
+  \item un loader Binance,
+  \item un scraper Deribit,
+  \item un StateBuilder,
+  \item un RewardEngine.
+\end{itemize}
+
+Mais le \textbf{signal clé} démarre ici :
+
+\begin{verbatim}
+IV surface (réelle ou synthétique)
+    ↓
+Inverse Heston
+    ↓
+Paramètres (kappa, theta, sigma, rho, v0)
+    ↓
+FeatureEngine
+    ↓
+StateBuilder
+    ↓
+RL agent
+\end{verbatim}
+
+C’est le \textbf{tuyau central} qui donne la vision du régime de volatilité.
+
+Tu dois donc :
+
+\begin{enumerate}
+  \item Pré-entraîner l’inverseur sur données synthétiques.
+  \item Le fine-tuner sur surfaces Deribit réelles.
+  \item Optionnel : faire un ``mixed training''.
+\end{enumerate}
+
+D’où les trois fichiers :
+
+\begin{itemize}
+  \item \texttt{train\_inverse\_heston.py}
+  \item \texttt{train\_heston\_real.py}
+  \item \texttt{mixed\_heston\_trainer.py}
+\end{itemize}
+
+\subsection*{5. Ce que je vais faire maintenant}
+
+Je vais te faire la \textbf{synthèse totale} du framework,  
+\textbf{point par point},  
+dans l’ordre logique,  
+avec des explications complètes.
+```
+```latex
+\section{II — FEATURE ENGINEERING SYSTEM (définition, structure, rôle, code, usage)}
+
+\emph{(Chapitre massif – tu dois le comprendre parfaitement, car tout ton RL dépend de lui.)}
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{II.1 — Pourquoi un FeatureEngine ?}
+
+Ton agent RL \textbf{ne peut pas traiter directement} :
+
+\begin{itemize}
+    \item les prix bruts
+    \item les volumes bruts
+    \item les surfaces IV
+    \item le sentiment
+    \item la profondeur de carnet
+    \item les paramètres Heston
+    \item les deltas de paramètres
+    \item les signaux dérivés
+    \item les signaux shitcoin
+    \item les signaux BTC
+\end{itemize}
+
+Un RL \textbf{ne comprend rien} à des inputs hétérogènes.
+Il te faut une couche organisée, modulaire, qui :
+
+\begin{enumerate}
+    \item \textbf{Récupère les données brutes} (prix, IV, funding…)
+    \item \textbf{Récupère les sorties Heston} (inverseur)
+    \item \textbf{Construit des features numériques}
+    \item \textbf{Fusionne tout dans un seul vecteur}
+    \item \textbf{Normalise, stacke, envoie au RL}
+\end{enumerate}
+
+C’est exactement ce que fait \texttt{FeatureEngine}.
+
+Le plus important : \\
+\textbf{LL’ensemble du RL ne voit JAMAIS de données “brutes”.} \\
+Tout passe par des modules spécialisés.
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{II.2 — Structure du FeatureEngine}
+
+Dans le dépôt, tu as :
+
+\begin{verbatim}
+features/
+    ├── feature_engine.py
+    └── state_builder.py
+\end{verbatim}
+
+\texttt{feature\_engine.py} contient :
+
+\begin{itemize}
+    \item L’interface \texttt{FeatureModule}
+    \item La classe \texttt{FeatureEngine}
+    \item 4 modules :
+    \begin{enumerate}
+        \item \texttt{ShitcoinFeatureModule}
+        \item \texttt{BtcHestonFeatureModule}
+        \item \texttt{SentimentFeatureModule}
+        \item \texttt{GenericMarketFeatureModule}
+    \end{enumerate}
+\end{itemize}
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{II.3 — FeatureModule (interface)}
+
+\begin{verbatim}
+class FeatureModule(abc.ABC):
+    @abc.abstractmethod
+    def compute_features(self, context: Dict[str, Any]) -> Dict[str, float]:
+        raise NotImplementedError
+\end{verbatim}
+
+$\rightarrow$ Chaque module doit prendre un petit dictionnaire \texttt{context}
+et \textbf{retourner un dictionnaire de features numériques}.
+
+\textbf{Important :} chaque feature doit être un \texttt{float} propre, pas un tensor.
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{II.4 — FeatureEngine (le chef d’orchestre)}
+
+\begin{verbatim}
+class FeatureEngine:
+    def __init__(self, modules: Dict[str, FeatureModule]):
+        self.modules = modules
+        self.feature_order = None
+
+    def compute_features(self, context):
+        merged = {}
+        for name, module in self.modules.items():
+            feats = module.compute_features(context[name])
+            merged[f"{name}.{k}"] = v for k,v in feats.items()
+
+        if self.feature_order is None:
+            self.feature_order = sorted(merged.keys())
+
+        vec = np.array([merged[k] for k in self.feature_order], dtype=np.float32)
+        return vec, merged
+\end{verbatim}
+
+\textbf{Points cruciaux :}
+
+\begin{itemize}
+    \item Fusion des features = simple concaténation triée.
+    \item Ordre des features figé à la première exécution $\rightarrow$ stable.
+    \item Le RL reçoit un \textbf{vecteur 1D}.
+\end{itemize}
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{II.5 — MODULE 1 : ShitcoinFeatureModule}
+
+C’est celui qui te donne :
+
+\begin{itemize}
+    \item features statistiques (vol, skew, kurt)
+    \item features de volume / funding
+    \item features Heston pseudo-surface
+    \item deltas des paramètres Heston
+\end{itemize}
+
+\subsubsection*{Pourquoi un “pseudo-surface” pour shitcoin ?}
+
+Parce qu’un shitcoin n’a \textbf{pas d’options} $\rightarrow$ donc pas de surface IV.
+
+Alors on fabrique une surface artificielle :
+
+\begin{enumerate}
+    \item On prend des retours glissants.
+    \item On découpe en fenêtres (ex: 3, 10, 30 minutes).
+    \item On calcule les moments :
+    \begin{itemize}
+        \item moyenne
+        \item variance
+        \item skew
+        \item kurt
+    \end{itemize}
+    \item On met tout ça dans une pseudo-matrice \texttt{[M,4]}.
+    \item On l'envoie dans ton inverseur Heston (qui voit juste une “surface”).
+    \item Il te sort \textbf{des paramètres Heston cohérents}.
+\end{enumerate}
+
+Tu crées donc un \textbf{embedding de régime} pour un actif sans options.
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{II.6 — MODULE 2 : BtcHestonFeatureModule}
+
+Celui-là :
+
+\begin{itemize}
+    \item Charge la surface IV réelle (ou simulée) \texttt{[NK, NT]}
+    \item Normalise
+    \item Donne :
+    \begin{itemize}
+        \item paramètres Heston calibrés (via inverseur)
+        \item deltas Heston
+        \item ATM IV
+        \item slope du smile
+        \item basis
+        \item funding
+        \item OI
+        \item realized vols spot
+    \end{itemize}
+\end{itemize}
+
+C’est le bloc le plus important du feature engineering : \\
+\textbf{il capture la structure complète du marché BTC.}
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{II.7 — MODULE 3 : SentimentFeatureModule}
+
+Module simple :
+
+\begin{verbatim}
+class SentimentFeatureModule(FeatureModule):
+    def compute_features(self, context):
+        return {key: float(v) for key,v in context.items()}
+\end{verbatim}
+
+$\rightarrow$ Tu remplaces le \texttt{context} par ton provider réel Twitter/Telegram.
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{II.8 — MODULE 4 : GenericMarketFeatureModule}
+
+Ajoute :
+
+\begin{itemize}
+    \item OHLC
+    \item volume
+    \item éventuellement volatilité courte
+    \item spreads, etc.
+\end{itemize}
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{II.9 — Fusion finale}
+
+Après tous les modules $\rightarrow$ \texttt{FeatureEngine.compute\_features()} renvoie :
+
+\begin{verbatim}
+obs_vec = [ shitcoin.ret_mean,
+            shitcoin.realized_vol,
+            shitcoin.rho_s,
+            ...,
+            btc.theta_s,
+            btc.atm_iv_short,
+            btc.funding_rate,
+            ...,
+            sentiment.sentiment_score,
+            ...,
+            generic.close,
+            generic.volume,
+            ...
+          ]
+\end{verbatim}
+
+Tu obtiens un vecteur \textbf{dimension D} (\texttt{\textasciitilde 50–300} selon additions).
+
+C’est cet unique vecteur qui part dans :
+
+\begin{verbatim}
+StateBuilder → RL agent
+\end{verbatim}
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{II.10 — Pourquoi cette architecture est “pro”}
+
+Car elle sépare :
+
+\begin{itemize}
+    \item l’ingestion
+    \item la transformation
+    \item la normalisation
+    \item la mémorisation temporelle
+    \item la décision RL
+\end{itemize}
+
+C’est exactement ce que tu trouves dans :
+
+\begin{itemize}
+    \item Jane Street (signaux → features → models)
+    \item Jump Trading
+    \item Optiver
+    \item Citadel
+    \item G-Research
+    \item Tower Research
+\end{itemize}
+
+Cette intégration modulaire est \textbf{scalable}, réplicable, traçable.
+```
+```latex
+\section{III — STATE BUILDER (normalisation + stacking temporel)}
+
+\emph{(C’est le deuxième pilier absolu de ton pipeline après le FeatureEngine.)}
+
+Le FeatureEngine produit un \textbf{vecteur de features} de dimension D :
+
+\begin{verbatim}
+feat_vec = np.array([f1, f2, ..., fD])
+\end{verbatim}
+
+Mais un RL ne travaille \textbf{jamais} sur un seul instant t.
+Il travaille sur une \textbf{séquence} récente (temporal context), tout comme un trader.
+
+Le StateBuilder convertit donc :
+
+\begin{itemize}
+    \item le vecteur brut → vecteur normalisé
+    \item puis → fenêtré (stacking temporel)
+    \item puis → état final [window × dim]
+\end{itemize}
+
+Le RL consomme alors un état structuré.
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{III.1 — Pourquoi normaliser online (RunningStats)}
+
+Dans le StateBuilder :
+
+\begin{verbatim}
+class RunningStats:
+    def update(self, x):
+        ...
+    @property
+    def mean(self): ...
+    @property
+    def std(self): ...
+\end{verbatim}
+
+Le but : \textbf{normaliser sur la distribution réelle du flux}, pas sur un scaler figé.
+
+Conséquences :
+
+\begin{itemize}
+    \item Quand les marchés bougent, ta normalisation se met à jour.
+    \item Si une feature a un régime shift (ex : funding qui explose), le RL ne s’effondre pas.
+    \item Tu n’as pas besoin d’estimer une stat globale au préalable.
+\end{itemize}
+
+\textbf{Sans normalisation online}, ton RL diverge en 2 minutes.
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{III.2 — Normalizer (z-score + clipping)}
+
+\begin{verbatim}
+normed = (x - mean) / std
+\end{verbatim}
+
+\textbf{clipping :}
+
+\begin{verbatim}
+np.clip(normed, -clip_value, clip_value)
+\end{verbatim}
+
+Pourquoi ?
+
+\begin{itemize}
+    \item éviter les spikes
+    \item éviter les outliers
+    \item éviter que le RL “pète un plomb”
+\end{itemize}
+
+Tu utilises un \texttt{clip\_value=5.0}, ce qui est très standard.
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{III.3 — StateBuffer (mémoire temporelle)}
+
+C’est un buffer circulaire de shape :
+
+\begin{verbatim}
+[window, dim]
+\end{verbatim}
+
+Exemple : \\
+window = 16, dim = 80 → state final = 16 × 80 = 1280 valeurs.
+
+\textbf{Pourquoi un buffer circulaire ?}
+
+\begin{itemize}
+    \item plus efficace
+    \item pas besoin de re-shift les arrays
+    \item stable dans le temps
+    \item toujours rempli dans le même ordre
+\end{itemize}
+
+Il reconstruit une séquence ordonnée du plus ancien au plus récent :
+
+\begin{verbatim}
+t-15
+t-14
+...
+t-1
+t
+\end{verbatim}
+
+Le RL voit ainsi la \textbf{structure temporelle des features}.
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{III.4 — StateBuilder = Normalizer + StateBuffer}
+
+\begin{verbatim}
+class StateBuilder:
+    def build_state(self, feature_vec):
+        normed = self.normalizer.normalize(feature_vec, update_stats=True)
+        self.buffer.push(normed)
+        return self.buffer.get_state()
+\end{verbatim}
+
+Résumé :
+
+\begin{enumerate}
+    \item Prend un vecteur brut
+    \item Le normalise
+    \item Le pousse dans un buffer temporel
+    \item Retourne la séquence [window, dim]
+\end{enumerate}
+
+\textbf{C’est cette séquence que PPO consomme.}
+
+Sans StateBuilder → ton RL ne fait rien.
+```
+```latex
+\section{IV — ENVIRONNEMENT RL (\texttt{TradingEnv})}
+
+\emph{(C’est la troisième brique critique : le RL interagit avec un environnement comme un trader avec un marché.)}
+
+Tu as maintenant :
+
+\begin{itemize}
+    \item FeatureEngine → transforme les données brutes en features intelligents
+    \item StateBuilder → créé un état temporel normalisé
+    \item PPO Agent → prend des actions
+\end{itemize}
+
+L’environnement RL fait le lien entre :
+
+\begin{verbatim}
+Policy(action)  ←→  TradingEnv
+\end{verbatim}
+
+Il :
+
+\begin{itemize}
+    \item construit l’observation,
+    \item applique l’action,
+    \item calcule le reward,
+    \item déplace le marché d’un pas,
+    \item retourne `obs, reward, done, info`.
+\end{itemize}
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{IV.1 — Structure générale de l’environnement}
+
+Ton fichier :
+
+\begin{verbatim}
+env/trading_env.py
+\end{verbatim}
+
+Définit :
+
+\begin{verbatim}
+class TradingEnv(gym.Env):
+    ...
+\end{verbatim}
+
+Ce qui implique :
+
+\begin{itemize}
+    \item compatibilité stable avec gymnasium/gym RL
+    \item tu peux plugger PPO/SAC/TD3/etc.
+    \item support immédiat pour des implémentations RL existantes
+\end{itemize}
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{IV.2 — Le rôle exact de l’environnement}
+
+Il ne s’agit \textbf{pas} d’une simulation de marché réaliste.
+L’environnement te donne 3 fonctions essentielles :
+
+\subsubsection*{1. \textbf{reset()}}
+
+\begin{itemize}
+    \item réinitialise l’environnement
+    \item met le temps \texttt{t} à un index défini
+    \item remet le capital et la position à zéro
+    \item remet le StateBuilder à zéro
+    \item renvoie la première observation (state)
+\end{itemize}
+
+\subsubsection*{2. \textbf{step(action)}}
+
+\begin{itemize}
+    \item applique l’action du RL
+    \item modifie la position
+    \item calcule les coûts
+    \item avance le temps \texttt{t → t+1}
+    \item calcule le reward
+    \item renvoie :
+    \begin{itemize}
+        \item nouvelle observation
+        \item reward
+        \item done/truncated
+        \item informations debug
+    \end{itemize}
+\end{itemize}
+
+\subsubsection*{3. \textbf{render()} (optionnel, souvent inutilisé)}
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{IV.3 — Détaillons \texttt{step()}}
+
+Le coeur :
+
+\begin{verbatim}
+action ∈ [-1,1]  # proportion du capital exposée long/short
+\end{verbatim}
+
+Exemple :
+
+\begin{itemize}
+    \item +1 → 100\% long
+    \item -1 → 100\% short
+    \item 0 → neutre
+\end{itemize}
+
+Ensuite l’environnement calcule :
+
+\subsubsection*{1. \textbf{Position cible}}
+
+\begin{verbatim}
+target_position_value = a * equity
+target_position = target_position_value / price
+\end{verbatim}
+
+\subsubsection*{2. \textbf{Coût de transaction}}
+
+\begin{verbatim}
+cost = transaction_cost * abs(target_position - old_position) * price
+\end{verbatim}
+
+\subsubsection*{3. Mise à jour cash et position}
+
+\subsubsection*{4. Calcul du nouveau capital (equity)}
+
+\subsubsection*{5. \textbf{reward = (equity\_now – equity\_prev) / capital\_initial}}
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{IV.4 — Le reward initial est “simple”}
+
+Ce reward dans la version zip =
+\textbf{PnL instantané / capital\_initial}.
+
+C’est \textbf{volatil}
+et \textbf{pas risk-adjusted}.
+
+C’est pour ça que je t’ai construit ensuite un \textbf{RewardEngine avancé}, plus proche du réel.
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{IV.5 — \texttt{\_get\_state()} : lien avec FeatureEngine + StateBuilder}
+
+Méthode clé :
+
+\begin{verbatim}
+feat_vec, feat_dict = self.fe.compute_features(context)
+state = self.sb.build_state(feat_vec)
+flat = state.reshape(-1)
+return flat
+\end{verbatim}
+
+Donc l’ordre d’exécution :
+
+\begin{verbatim}
+Données brutes (prix, IV, funding, surface, etc.)
+    ↓
+FeatureEngine
+    ↓ vecteur 1D
+StateBuilder
+    ↓ matrice [window × dim]
+flatten
+    ↓ vecteur RL-ready
+env.step() ← renvoie obs au PPO
+\end{verbatim}
+
+L’environnement ne contient \textbf{aucune} logique financière complexe.
+Il est un \textbf{wrapper} autour de ton moteur de features.
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{IV.6 — Le rôle crucial du \texttt{context}}
+
+Pour chaque \texttt{t}, l’env construit :
+
+\begin{verbatim}
+context = {
+    "shitcoin": {...},
+    "btc": {...},
+    "sentiment": {...},
+    "generic": {...},
+}
+\end{verbatim}
+
+Chaque module lit \textbf{uniquement son sous-context}.
+
+C’est \textbf{ultra propre} et garantit :
+
+\begin{itemize}
+    \item isolation des modules
+    \item extensibilité
+    \item debug facile
+    \item remplacements possibles sans casser le reste
+\end{itemize}
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{IV.7 — État complet résumé}
+
+Dans \texttt{TradingEnv}, tu as :
+
+\begin{itemize}
+    \item accès aux séries (simulées ou réelles)
+    \item un FeatureEngine modulaire
+    \item un StateBuilder
+\end{itemize}
+
+Les observations du RL reflètent :
+
+\begin{itemize}
+    \item structure vol BTC via inverseur Heston
+    \item structure shitcoin via pseudo-Heston moments
+    \item sentiment
+    \item ohlcv
+    \item funding / OI
+    \item realized vol
+    \item basis futures/spot
+    \item deltas Heston
+\end{itemize}
+
+\textbf{C’est un état riche, multi-modèles, multi-niveaux.}
+```
+```latex
+\section{V — PPO AGENT (POLICY + VALUE FUNCTIONS + GAE + OPTIMISATION)}
+
+\emph{(Le “cerveau” de ton système. C’est lui qui apprend la politique de trading.)}
+
+Ton code PPO est un PPO minimaliste, propre, inspiré de SpinningUp d’OpenAI, et totalement compatible avec ton environnement.
+
+Ce chapitre va te permettre de comprendre \textbf{exactement ce que fait ton PPO}, comment il apprend, et pourquoi il est adapté à ce pipeline.
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{V.1 — Architecture globale du PPO}
+
+Ton agent PPO :
+
+\begin{itemize}
+    \item reçoit \texttt{obs} (état RL)
+    \item produit une action \texttt{a}
+    \item estime la valeur \texttt{v(s)}
+    \item met à jour sa politique et sa value function
+    \item corrige les dérives via clipping
+\end{itemize}
+
+Le code :
+
+\begin{verbatim}
+rl/ppo_agent.py
+\end{verbatim}
+
+Contient :
+
+\begin{itemize}
+    \item \texttt{PPOConfig}
+    \item \texttt{MLP}
+    \item \texttt{PPOAgent}
+    \item \texttt{compute_gae}
+\end{itemize}
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{V.2 — Le réseau de POLICY}
+
+\begin{verbatim}
+self.pi_net = MLP(obs_dim, 1)
+\end{verbatim}
+
+→ MLP simple qui prend tout l’état \texttt{[window × dim]}
+et renvoie \textbf{une moyenne d’action} (\texttt{mu}), donc une action dans ℝ¹.
+
+\subsubsection*{Bruit d’exploration}
+
+Tu as :
+
+\begin{verbatim}
+self.log_std = nn.Parameter(torch.zeros(1,1))
+\end{verbatim}
+
+→ l’action réelle est :
+
+\begin{verbatim}
+a = mu + exp(log_std) * noise
+\end{verbatim}
+
+Le bruit est essentiel en PPO pour explorer différentes expositions.
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{V.3 — Le réseau de VALUE}
+
+\begin{verbatim}
+self.v_net = MLP(obs_dim, 1)
+\end{verbatim}
+
+Renvoie la valeur estimée :
+
+\begin{verbatim}
+V(s) = estimation du discounted reward futur
+\end{verbatim}
+
+Cette estimation sert à calculer :
+
+\begin{itemize}
+    \item l’avantage (Advantage Function)
+    \item la perte du critic
+\end{itemize}
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{V.4 — Distribution des actions}
+
+\begin{verbatim}
+dist = Normal(mu, std)
+a = dist.sample()
+logp = dist.log_prob(a).sum()
+\end{verbatim}
+
+Le RL enregistre ces log-probabilities pour l’étape d’optimisation.
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{V.5 — Calcul de l’Advantage : GAE (Generalized Advantage Estimation)}
+
+Partie hyper importante.
+
+Ton code :
+
+\begin{verbatim}
+adv, ret = compute_gae(rews, vals, dones, gamma, lam)
+\end{verbatim}
+
+GAE sert à estimer :
+
+\begin{verbatim}
+Advantage = Quality of action a_t wrt baseline V(s_t)
+\end{verbatim}
+
+La version complète :
+
+\begin{verbatim}
+delta_t = r_t + γ V(s_{t+1}) - V(s_t)
+adv_t = delta_t + γ λ adv_{t+1}
+\end{verbatim}
+
+GAE donne un avantage plus stable et moins bruité que la méthode naïve.
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{V.6 — Update Policy (the PPO objective)}
+
+Objectif PPO :
+
+\begin{verbatim}
+maximize  E[ min( r_t * Adv_t , clip(r_t, 1-ε,1+ε) * Adv_t ) ]
+\end{verbatim}
+
+où :
+
+\begin{verbatim}
+r_t = exp(logp_new - logp_old)
+\end{verbatim}
+
+Le code :
+
+\begin{verbatim}
+ratio = torch.exp(logp - logp_old)
+clip_adv = torch.clamp(ratio, 1-clip_ratio, 1+clip_ratio) * adv
+loss_pi = -min(ratio*adv , clip_adv)
+\end{verbatim}
+
+→ Cela empêche la politique de changer trop vite (“policy collapse”).
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{V.7 — Update Value Function}
+
+Objectif :
+
+\begin{verbatim}
+loss_v = (V(s_t) – ret_t)^2
+\end{verbatim}
+
+Rien de compliqué ici, c’est du MSE.
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{V.8 — Training loop (dans train\_ppo.py)}
+
+Dans ton fichier :
+
+\begin{itemize}
+    \item On collecte des rollouts (\texttt{rollout\_len=2048})
+    \item On stocke :
+    \begin{itemize}
+        \item \texttt{obs}
+        \item \texttt{acts}
+        \item \texttt{logprobs}
+        \item \texttt{rewards}
+        \item \texttt{values}
+        \item \texttt{dones}
+    \end{itemize}
+\end{itemize}
+
+Ensuite :
+
+\begin{itemize}
+    \item on appelle \texttt{agent.update(buf)}
+    \item PPO se met à jour
+    \item on boucle jusqu’à \texttt{total\_steps}
+\end{itemize}
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{V.9 — Ce que PPO apprend réellement dans ton setup}
+
+\subsubsection*{Il apprend une \textbf{politique d’exposition} en fonction :}
+
+\begin{itemize}
+    \item de la dynamique vol shitcoin
+    \item de la structure IV BTC (via inverseur Heston)
+    \item des signaux sentiment
+    \item des signaux microstructure
+    \item des réalisations passées (fenêtre temporelle)
+\end{itemize}
+
+Et donc il apprend :
+
+\begin{itemize}
+    \item \textbf{quand être long},
+    \item quand \textbf{être short},
+    \item quand \textbf{réduire},
+    \item quand \textbf{augmenter},
+    \item comment \textbf{équilibrer le risque},
+    \item comment \textbf{réagir aux régimes volatiles}.
+\end{itemize}
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{V.10 — Limites du PPO actuel}
+
+Tu dois connaître les limites :
+
+\begin{itemize}
+    \item reward basique = pas risk-adjusted
+    \item simulateur = trop simple
+    \item densité d’information du state = fixe
+    \item horizon = court
+    \item bruit des actions = isotrope (pas conditionnel)
+\end{itemize}
+
+C’est pour ça que je t’ai donné ensuite :
+
+\begin{itemize}
+    \item un RewardEngine complet
+    \item un simulateur réel
+    \item des signaux réels
+    \item un inverse Heston solide
+\end{itemize}
+
+Ce PPO est \textbf{suffisant pour débuter} mais tu peux le remplacer par :
+
+\begin{itemize}
+    \item SAC
+    \item TD3 (si actions continues)
+    \item PPO avec LSTM
+    \item PPO avec attention
+    \item PPO multi-actions (hedge + vol + delta)
+\end{itemize}
+
+Mais pour l’instant, c’est parfaitement suffisant.
+```
+```latex
+\section{VI — SIMULATEUR DE MARCHÉ (\texttt{simulate\_market}) : À QUOI IL SERT ET POURQUOI TU DOIS LE TUER UN JOUR}
+
+Ce simulateur est dans :
+
+\begin{verbatim}
+data/simulated_data.py
+\end{verbatim}
+
+C’est lui qui fabrique les séries :
+
+\begin{itemize}
+    \item BTC prices
+    \item shitcoin prices
+    \item funding
+    \item volumes
+    \item OI
+    \item IV surface “fake” BTC
+\end{itemize}
+
+Son rôle : te donner \textbf{un environnement complet fonctionnel}, sans dépendre d’aucune API, pour que tu puisses :
+
+\begin{itemize}
+    \item lancer \texttt{train\_ppo.py}
+    \item vérifier l’architecture complète (FeatureEngine → StateBuilder → PPO → Env)
+    \item débugger rapidement
+\end{itemize}
+
+Tu ne dois pas le prendre pour plus que ce qu’il est :
+\textbf{une maquette}.
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{VI.1 — Structure du simulateur}
+
+Dans \texttt{SimMarketConfig}, tu spécifies :
+
+\begin{verbatim}
+@dataclass
+class SimMarketConfig:
+    n_steps: int = 10_000
+    dt: float = 1.0
+    mu_btc: float = 0.0
+    mu_shit: float = 0.0
+    vol_btc: float = 0.02
+    vol_shit: float = 0.05
+    seed: int = 123
+\end{verbatim}
+
+Puis \texttt{simulate\_market(config)} :
+
+\begin{enumerate}
+    \item Crée \texttt{btc\_prices} par un \textbf{Geometric Brownian Motion} (GBM) :
+
+    \[
+    S_{t+1} = S_t \exp\left[(\mu - \frac{1}{2}\sigma^2)\Delta t + \sigma\sqrt{\Delta t}Z_t\right]
+    \]
+
+    \item Crée \texttt{shit\_prices} de la même manière mais avec vol plus élevée.
+
+    \item Génère :
+    \begin{itemize}
+        \item \texttt{shit\_volumes} via log-normal
+        \item \texttt{shit\_funding} via normal
+        \item \texttt{btc\_fut\_prices} \verb|~| \texttt{btc\_spot * (1 + 0.001 * noise)}
+        \item \texttt{btc\_funding} via normal
+        \item \texttt{btc\_oi} via log-normal
+    \end{itemize}
+
+    \item Crée une surface IV “fake” :
+    \begin{itemize}
+        \item \texttt{base\_iv = vol\_btc}
+        \item ajoute un \textbf{smile} en fonction de k (log-moneyness)
+        \item ajoute une term-structure en fonction de T
+    \end{itemize}
+
+    Résultat : \texttt{btc\_iv\_surface[t, i, j]} \\
+    où \texttt{t} = temps, \texttt{i} = strike, \texttt{j} = maturité.
+\end{enumerate}
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{VI.2 — Ce que la surface IV “fake” contient}
+
+La surface IV est:
+
+\begin{verbatim}
+btc_iv_surface[t, i, j] = base_iv + 0.2*|k_i| + 0.1*log(1+T_j)
+\end{verbatim}
+
+→ Elle a :
+
+\begin{itemize}
+    \item un skew symétrique (via \texttt{|k|})
+    \item une term-structure monotone (via \texttt{log(1+T)})
+    \item mais \textbf{aucun lien avec la dynamique simulée} de S
+\end{itemize}
+
+C’est un décor.
+Suffisant pour que l’inverseur Heston voie une “géométrie” cohérente,
+mais pas un modèle de marché réaliste.
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{VI.3 — Pourquoi ce simulateur est quand même utile}
+
+Malgré ses limitations, il te permet de :
+
+\begin{itemize}
+    \item vérifier que le FeatureEngine reçoit bien des surfaces IV,
+    \item tester que le BtcHestonFeatureModule fonctionne (Heston-inverse + ATM + slope),
+    \item tester que le ShitcoinFeatureModule fonctionne (pseudo-surface + embedding),
+    \item tester que le StateBuilder gargouille correctement,
+    \item tester que TradingEnv + PPO tournent sans bug.
+\end{itemize}
+
+C’est ton \textbf{sandbox “dry run”}.
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{VI.4 — Pourquoi tu dois le remplacer sur du vrai travail}
+
+Tu ne peux pas :
+
+\begin{itemize}
+    \item valider une stratégie,
+    \item analyser la robustesse,
+    \item mesurer la performance,
+    \item calibrer Heston sérieusement,
+    \item étudier des régimes volatiles réels,
+\end{itemize}
+
+sur ce simulateur.
+
+Tu dois le remplacer par :
+
+\begin{itemize}
+    \item \texttt{RealMarketData} (Binance + Deribit)
+    \item ou ton propre loader de fichiers historiques (CSV/HDF/Parquet).
+\end{itemize}
+
+Et c’est pour ça que je t’ai donné :
+
+\begin{itemize}
+    \item \texttt{binance\_loader.py}
+    \item \texttt{deribit\_loader.py}
+    \item \texttt{real\_market\_loader.py}
+    \item \texttt{alignment.py}
+\end{itemize}
+
+pour que tu puisses passer du fake → réel.
+```
+```latex
+C’est le script qui orchestre tout :
+
+\begin{itemize}
+    \item crée les données
+    \item instancie FeatureEngine + StateBuilder
+    \item instancie l’environnement
+    \item instancie PPO
+    \item lance la boucle d’entraînement RL
+    \item calcule un backtest simple (equity\_curve + stats)
+\end{itemize}
+
+C’est le “main” de ton framework.
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{VII.1 — Pipeline global de \texttt{train\_ppo.py}}
+
+Dans la version fournie (avec simulateur), la structure est :
+
+\begin{verbatim}
+def train_ppo(...):
+
+    # 1) Market (simulé ou réel)
+    market = simulate_market(...)
+
+    # 2) Device
+    device = torch.device("cuda" ...)
+
+    # 3) Inverseurs Heston (dummy ou réels)
+    btc_model = load_heston_inverse_model(...)
+    shit_model = load_heston_inverse_model(...)
+
+    # 4) FeatureEngine
+    fe = create_default_feature_engine(shit_model, btc_model, device)
+
+    # 5) Dimension des features
+    dummy_vec, _ = fe.compute_features(dummy_context)
+    dim = dummy_vec.shape[0]
+
+    # 6) StateBuilder
+    sb = StateBuilder(dim=dim, window=16, ...)
+
+    # 7) Environnement TradingEnv
+    env = TradingEnv(market, fe, sb, config_env)
+
+    # 8) PPOAgent (obs_dim = flatten(window*dim))
+    obs, info = env.reset()
+    obs_dim = obs.shape[0]
+    agent = PPOAgent(obs_dim, ppo_cfg)
+
+    # 9) Boucle globale
+    while global_step < total_steps:
+        # collecter un rollout
+        # mettre à jour PPO
+        # stocker equity pour stats
+
+    # 10) Backtester (compute_pnl_stats)
+\end{verbatim}
+
+Les étapes 1→8 préparent le système ; 9→10 réalisent l’apprentissage.
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{VII.2 — Le dummy context pour déterminer la dimension}
+
+\begin{verbatim}
+dummy_ctx = {
+    "shitcoin": {...},
+    "btc": {...},
+    "sentiment": {...},
+    "generic": {...},
+}
+dummy_vec, _ = fe.compute_features(dummy_ctx)
+dim = dummy_vec.shape[0]
+\end{verbatim}
+
+Ce “dummy\_ctx” n’a qu’un but :
+
+\begin{itemize}
+    \item savoir combien de features totales ton FeatureEngine produit
+    \item pour pouvoir dimensionner le StateBuilder et l’observation RL.
+\end{itemize}
+
+Ensuite, le FeatureEngine calcule la vraie dimension dynamiquement.
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{VII.3 — L’environnement, le RL et les rollouts}
+
+La boucle RL :
+
+\begin{enumerate}
+    \item \texttt{obs = env.reset()}
+    \item Pour \texttt{rollout\_len} étapes :
+    \begin{itemize}
+        \item on stocke l’observation
+        \item on obtient \texttt{v\_t} via \texttt{v\_net(obs)}
+        \item on choisit \texttt{action = agent.act(obs)}
+        \item on appelle \texttt{env.step(action)}
+        \item on stocke \texttt{reward}, \texttt{logp}, \texttt{done}, \texttt{new\_obs}
+        \item on met à jour \texttt{equity\_history} pour le backtester
+        \item on gère le \texttt{reset()} en cas de done
+    \end{itemize}
+    \item On a alors des buffers :
+    \begin{itemize}
+        \item \texttt{obs\_buf}
+        \item \texttt{act\_buf}
+        \item \texttt{logp\_buf}
+        \item \texttt{rew\_buf}
+        \item \texttt{val\_buf}
+        \item \texttt{done\_buf}
+    \end{itemize}
+    \item On calcule \texttt{adv} et \texttt{ret} par \texttt{compute\_gae}.
+    \item On appelle \texttt{agent.update(buf)} pour mettre à jour PPO.
+    \item On boucle jusqu’à avoir fait \texttt{total\_steps}.
+\end{enumerate}
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{VII.4 — Le backtest final}
+
+À la fin :
+
+\begin{verbatim}
+equity_curve = np.array(equity_history)
+stats = compute_pnl_stats(equity_curve)
+print("Backtest stats:", stats)
+\end{verbatim}
+
+Le backtester renvoie :
+
+\begin{itemize}
+    \item \texttt{pnl}
+    \item \texttt{sharpe}
+    \item \texttt{max\_drawdown}
+    \item \texttt{avg\_ret}
+    \item \texttt{vol\_ret}
+\end{itemize}
+
+C’est une première mesure :
+\textbf{ton agent crée-t-il réellement de la valeur sur ce simulateur ?}
+
+Sur le simulateur, ce n’est pas intéressant.
+Mais sur des vraies données, c’est ton premier critère.
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{VII.5 — Ce que tu dois modifier quand tu passes en réel}
+
+Dans \texttt{train\_ppo.py}, à terme tu dois remplacer :
+
+\begin{enumerate}
+    \item \texttt{simulate\_market(...)}
+    
+    \quad → \texttt{load\_real\_market\_data(...)}
+    
+    \quad ou un loader custom sur ton historique.
+
+    \item \texttt{load\_heston\_inverse\_model(..., ckpt\_path=None)} (dummy)
+    
+    \quad → \texttt{load\_heston\_inverse\_model(..., ckpt\_path="models/heston\_inverse\_real.pt")}
+    
+    \quad ou \texttt{"models/heston\_inverse\_mixed.pt"}.
+
+    \item Reward simple
+    
+    \quad → RewardEngine financier (PnL, vol, drawdown, turn-over).
+
+    \item Sentiment dummy (0.0)
+    
+    \quad → vrai SentimentProvider.
+\end{enumerate}
+```
+```latex
+\section{VIII — DONNÉES RÉELLES : BINANCE + DERIBIT + SENTIMENT + REWARD PRO}
+
+C’est ici qu’on quitte la “maquette” pour construire un système utilisable pour de la vraie recherche.
+
+Tu avais au départ :
+
+\begin{itemize}
+    \item \texttt{simulate\_market()} → données totalement artificielles
+    \item \texttt{DummyHestonInverse} → inverseur Heston vide
+    \item pas de sentiment réel
+    \item reward simpliste
+\end{itemize}
+
+Je t’ai donné ensuite \textbf{toute la chaîne pour passer au réel} :
+
+\begin{enumerate}
+    \item Loader Binance (spot, futures, funding)
+    \item Loader Deribit (surface IV)
+    \item Stockage des surfaces IV en \texttt{.npz}
+    \item Alignement temporel Binance/Deribit
+    \item Loader structuré \texttt{RealMarketData}
+    \item Module de sentiment prêt à brancher
+    \item RewardEngine financier
+\end{enumerate}
+
+On va passer en revue tout ça.
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{VIII.1 — Loader Binance (spot + futures + funding)}
+
+Fichier : \texttt{data/binance\_loader.py}
+
+\subsubsection*{Objectif}
+
+Récupérer sur Binance :
+
+\begin{itemize}
+    \item Spot OHLCV (BTC/USDT, shitcoins/USDT)
+    \item Futures Perp OHLCV
+    \item Funding rates
+    \item Alignés dans un unique DataFrame
+\end{itemize}
+
+\subsubsection*{Fonctions clés}
+
+\begin{verbatim}
+def fetch_binance_ohlcv(symbol, timeframe, limit, futures=False)
+\end{verbatim}
+
+\begin{itemize}
+    \item Utilise \texttt{ccxt.binance()} ou \texttt{ccxt.binanceusdm()}
+    \item Renvoie un DataFrame indexé par timestamp, avec :
+    \begin{itemize}
+        \item open, high, low, close, volume
+    \end{itemize}
+\end{itemize}
+
+\begin{verbatim}
+def fetch_binance_funding(symbol, limit)
+\end{verbatim}
+
+\begin{itemize}
+    \item Récupère l’historique de funding rate futures
+    \item Retourne un DataFrame avec \texttt{funding\_rate} indexé par timestamp
+\end{itemize}
+
+\begin{verbatim}
+def align_series(*dfs, how="inner")
+\end{verbatim}
+
+\begin{itemize}
+    \item Joint plusieurs DataFrames sur leur index (datetime)
+    \item Résultat : un seul DataFrame aligné.
+\end{itemize}
+
+\begin{verbatim}
+def load_binance_data(spot_symbol, futures_symbol, timeframe, limit)
+\end{verbatim}
+
+\begin{itemize}
+    \item Spot OHLCV
+    \item Futures OHLCV (juste close\_fut)
+    \item Funding rate
+    \item Renvoie un DataFrame avec colonnes :
+    \begin{itemize}
+        \item \texttt{close\_spot}, \texttt{volume\_spot}, \texttt{close\_fut}, \texttt{funding\_rate}
+    \end{itemize}
+\end{itemize}
+
+Ce loader est ton \textbf{pipe standard} pour récupérer :
+BTC spot, BTC perp, DOGE spot, DOGE perp, etc.
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{VIII.2 — Loader Deribit : surfaces d’IV}
+
+Fichier : \texttt{data/deribit\_loader.py} + \texttt{data/deribit\_scraper.py}
+
+\subsubsection*{But}
+
+\begin{itemize}
+    \item Récupérer les instruments d’options BTC chez Deribit
+    \item Construire une surface IV réduite (quelques strikes, quelques maturités)
+    \item La stocker comme matrice \texttt{[NK, NT]}, avec \texttt{k\_grid}, \texttt{t\_grid}, \texttt{spot}
+\end{itemize}
+
+\subsubsection*{\texttt{snapshot\_iv\_surface(...)}}
+
+\begin{enumerate}
+    \item Récupère la liste des options non expirées (BTC)
+    \item Filtre sur les calls
+    \item Convertit les times to maturity en années (T)
+    \item Choisit quelques maturités (ex: 4)
+    \item Pour chaque maturité, définit une grille de k = ln(K/ATM)
+    \item Pour chaque (k,T), trouve l’instrument le plus proche
+    \item Récupère son \texttt{mark\_iv} via \texttt{get\_order\_book}
+    \item Remplit \texttt{iv\_surface[i,j]} en fraction (iv\% / 100)
+\end{enumerate}
+
+Il renvoie :
+
+\begin{verbatim}
+{
+  "iv_surface": iv_surface,  # [NK,NT]
+  "k_grid": k_grid,          # [NK]
+  "t_grid": t_grid,          # [NT]
+  "spot": spot,
+  "timestamp": ts_unix,
+}
+\end{verbatim}
+
+\subsubsection*{\texttt{save\_snapshot\_npz(...)}}
+
+\begin{itemize}
+    \item Appelle \texttt{snapshot\_iv\_surface}
+    \item Sauvegarde dans \texttt{data/deribit\_surfaces/<currency>\_iv\_<timestamp>.npz}
+\end{itemize}
+
+Tu peux le lancer "toutes les X minutes" pour accumuler des surfaces.
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{VIII.3 — RealMarketData : remplacer simulate\_market}
+
+Fichier : \texttt{data/real\_market\_loader.py}
+
+\subsubsection*{Objectif}
+
+Produire une structure analogue à \texttt{SimMarketData}, mais avec \textbf{données réelles}.
+
+\begin{verbatim}
+@dataclass
+class RealMarketData:
+    btc_prices: np.ndarray
+    btc_fut_prices: np.ndarray
+    btc_funding: np.ndarray
+    btc_oi: np.ndarray
+    btc_iv_surface: np.ndarray   # [n_steps, NK, NT]
+    k_grid: np.ndarray
+    t_grid: np.ndarray
+
+    shit_prices: np.ndarray
+    shit_volumes: np.ndarray
+    shit_funding: np.ndarray
+\end{verbatim}
+
+\subsubsection*{\texttt{load\_real\_market\_data(...)}}
+
+\begin{itemize}
+    \item Utilise \texttt{load\_binance\_data} pour :
+    \begin{itemize}
+        \item BTC (spot \& futures \& funding)
+        \item shitcoin (spot \& volume \& funding)
+    \end{itemize}
+    \item Utilise \texttt{build\_iv\_surface} ou le scraper \texttt{.npz} pour une surface IV BTC
+    \item Copie/collage de la même surface IV sur toute la série (prototype)
+    
+    \quad → à toi d’implémenter un glissement temporel plus fin.
+\end{itemize}
+
+Ensuite tu remplaces dans \texttt{train\_ppo.py} :
+
+\begin{verbatim}
+market = simulate_market(...)
+\end{verbatim}
+
+par :
+
+\begin{verbatim}
+from data.real_market_loader import load_real_market_data
+market = load_real_market_data(...)
+\end{verbatim}
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{VIII.4 — Alignement Binance/Deribit}
+
+Fichier : \texttt{data/alignment.py}
+
+\subsubsection*{Problème}
+
+\begin{itemize}
+    \item Binance fournit OHLCV à une certaine fréquence (1m, 5m...).
+    \item Deribit fournit des snapshots d’IV à d’autres timestamps.
+    \item Ton RL/FeatureEngine attend des \textbf{données alignées} :
+    
+    \quad prix BTC et surfaces IV “dans la même timeline”.
+\end{itemize}
+
+\subsubsection*{Solution}
+
+\begin{enumerate}
+    \item \texttt{load\_deribit\_npz\_as\_df(directory)}
+    
+    \begin{itemize}
+        \item liste tous les \texttt{.npz} de surface
+        \item construit un DF avec index datetime, colonne \texttt{iv\_file} (chemin du fichier)
+    \end{itemize}
+
+    \item \texttt{align\_binance\_deribit(binance\_df, deribit\_index\_df, tolerance)}
+    
+    \begin{itemize}
+        \item \texttt{merge\_asof} sur index datetime
+        \item trouve pour chaque timestamp Binance le fichier IV le plus proche (sous \texttt{tolerance})
+    \end{itemize}
+\end{enumerate}
+
+Ensuite, dans ton environnement, tu peux pour chaque \texttt{t} :
+
+\begin{itemize}
+    \item prendre le chemin \texttt{iv\_file}
+    \item charger \texttt{iv\_surface}, \texttt{k\_grid}, \texttt{t\_grid} à la volée.
+\end{itemize}
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{VIII.5 — Sentiment réel (squelette)}
+
+Fichier : \texttt{sentiment/sentiment\_module.py}
+
+Tu as :
+
+\begin{verbatim}
+@dataclass
+class SentimentSnapshot:
+    sentiment_score: float
+    msg_rate: float
+    fear_greed: float
+\end{verbatim}
+
+\begin{verbatim}
+class SentimentProvider:
+    def fetch_snapshot(self) -> SentimentSnapshot:
+        # TODO: brancher Telegram/Twitter/Discord
+        return SentimentSnapshot(...)
+
+    def to_feature_dict(self, snap: SentimentSnapshot) -> Dict[str, float]:
+        return {...}
+\end{verbatim}
+
+Tu peux :
+
+\begin{itemize}
+    \item connecter Twitter via API → classifier les tweets (BERT/vader)
+    \item connecter Telegram via le nombre de messages + analyse de texte
+    \item connecter un Crypto Fear \& Greed Index
+\end{itemize}
+
+Dans \texttt{TradingEnv.\_build\_context}, tu remplaces :
+
+\begin{verbatim}
+sentiment_score = 0.0
+msg_rate = 0.0
+fear_greed = 0.0
+\end{verbatim}
+
+par :
+
+\begin{verbatim}
+snap = self.sentiment_provider.fetch_snapshot()
+sent_ctx = self.sentiment_provider.to_feature_dict(snap)
+"sentiment": sent_ctx,
+\end{verbatim}
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{VIII.6 — RewardEngine : reward financier sérieux}
+
+Fichier : \texttt{rl/reward.py}
+
+\subsubsection*{Problème du reward initial}
+
+Reward = PnL / capital\_initial \\
+→ incite à prendre des risques violents, sans pénaliser :
+
+\begin{itemize}
+    \item drawdown
+    \item leverage excessif
+    \item turnover
+    \item volatilité du portefeuille
+\end{itemize}
+
+\subsubsection*{RewardEngine}
+
+\begin{verbatim}
+@dataclass
+class RewardConfig:
+    pnl_scale: float = 1.0
+    turnover_penalty: float = 0.001
+    drawdown_penalty: float = 0.1
+    leverage_penalty: float = 0.05
+    target_vol: float = 0.02
+    vol_penalty: float = 0.05
+\end{verbatim}
+
+\begin{verbatim}
+class RewardEngine:
+    def compute_reward(
+        self,
+        equity_prev,
+        equity_now,
+        position_prev,
+        position_now,
+        price,
+    ) -> float:
+        # rel_pnl = (equity_now - equity_prev)/equity_prev
+        # turnover = |Δposition| * price
+        # inst_dd = drawdown instantané
+        # lev = |position_now * price / equity_now|
+        reward = pnl_scale*rel_pnl
+               - turnover_penalty*turnover
+               - drawdown_penalty*max(0,-inst_dd)
+               - leverage_penalty*lev
+\end{verbatim}
+
+\subsubsection*{Intégration dans \texttt{TradingEnv}}
+
+Dans \texttt{\_\_init\_\_} :
+
+\begin{verbatim}
+self.reward_engine = RewardEngine(RewardConfig(...))
+\end{verbatim}
+
+Dans \texttt{reset()} :
+
+\begin{verbatim}
+self.reward_engine.reset()
+\end{verbatim}
+
+Dans \texttt{step()} :
+
+\begin{verbatim}
+reward = self.reward_engine.compute_reward(
+    equity_prev=equity,
+    equity_now=new_equity,
+    position_prev=self.position,
+    position_now=target_position,
+    price=price_t,
+)
+\end{verbatim}
+
+Tu obtiens alors un reward beaucoup plus proche de ce qu’un risk manager accepterait :
+\textbf{PnL ajusté du risque}.
+```
+```latex
+\section{IX — INVERSEUR HESTON (SYNTHÉTIQUE, RÉEL, MIXTE) : LE CŒUR MATHÉMATIQUE DU FRAMEWORK}
+
+On arrive à la brique qui fait que ce projet n’est pas juste un énième RL Crypto bidon :
+\textbf{l’inverseur Heston}.
+
+C’est lui qui transforme une surface IV (ou pseudo-surface) en \textbf{paramètres de volatilité stochastique} :
+
+\[
+(\kappa, \theta, \sigma, \rho, v_0)
+\]
+
+Ces paramètres deviennent des \textbf{features puissantes} pour ton RL (et plus largement pour tout modèle de trading / risque).
+
+Tu as trois étages :
+
+\begin{enumerate}
+    \item Entraînement sur données synthétiques (\texttt{train\_inverse\_heston.py})
+    \item Fine-tuning sur données Deribit réelles (\texttt{train\_heston\_real.py} + \texttt{RealIvSurfaceDataset})
+    \item Entraînement mixte (synthétique + réel) (\texttt{mixed\_heston\_trainer.py})
+\end{enumerate}
+
+Cette partie est \textbf{fondamentale} : si tu la comprends, tu comprends toute la logique du framework.
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{IX.1 — Le modèle Inverse Heston (\texttt{models/heston\_inverse\_model.py})}
+
+\subsubsection*{Structure générale}
+
+\begin{verbatim}
+class InverseHestonModel(nn.Module):
+    def __init__(self, nk, nt, hidden_dim=128):
+        self.encoder = EncoderCNN(nk, nt, hidden_dim)
+        self.head_kappa = ParamHead(hidden_dim, 1)
+        self.head_theta = ParamHead(hidden_dim, 1)
+        self.head_sigma = ParamHead(hidden_dim, 1)
+        self.head_rho   = ParamHead(hidden_dim, 1)
+        self.head_v0    = ParamHead(hidden_dim, 1)
+        self.surface_head = SurfaceHead(hidden_dim, nk, nt)
+\end{verbatim}
+
+Entrée :
+
+\begin{itemize}
+    \item \texttt{x} : tensor \texttt{[B, 1, NK, NT]} = surface normalisée (variance totale ou IV)
+\end{itemize}
+
+Sortie :
+
+\begin{itemize}
+    \item \texttt{params} : \texttt{[B,5]} = paramètres scalés (z-score)
+    \item \texttt{surf\_recon} : \texttt{[B,1,NK,NT]} = reconstruction de la surface
+\end{itemize}
+
+\subsubsection*{EncoderCNN}
+
+\begin{itemize}
+    \item CNN 2D : 2 blocs de conv+ReLU+pool
+    \item flatten → MLP → embedding latent \texttt{z} (dimension \texttt{hidden\_dim})
+\end{itemize}
+
+\subsubsection*{ParamHead}
+
+\begin{itemize}
+    \item petit MLP qui prend \texttt{z} et produit un scalaire (paramètre Heston).
+\end{itemize}
+
+\subsubsection*{SurfaceHead}
+
+\begin{itemize}
+    \item MLP qui prend \texttt{z}
+    \item produit \texttt{NK*NT} valeurs
+    \item reshape en \texttt{[1,NK,NT]}
+    \item reconstruction de la surface.
+\end{itemize}
+
+\textbf{Idée clé} : \\
+Le modèle est un \textbf{autoencodeur avec tête de paramètres} :
+
+\[
+\text{Surface} \to z \to
+\begin{cases}
+\text{Paramètres} \\
+\text{Surface reconstruite}
+\end{cases}
+\]
+
+La reconstruction de surface agit comme un \textbf{régularisateur} très fort.
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{IX.2 — Entraînement synthétique (\texttt{train\_inverse\_heston.py})}
+
+Ce script :
+
+\begin{itemize}
+    \item génère des paramètres Heston synthétiques
+    \item génère des surfaces Heston-like synthétiques
+    \item entraîne l’inverseur à :
+    \begin{itemize}
+        \item reconstruire les paramètres
+        \item reconstruire la surface
+    \end{itemize}
+    \item sauvegarde le modèle
+\end{itemize}
+
+\subsubsection*{IX.2.1 — Grille (k,T)}
+
+\begin{verbatim}
+K_POINTS = np.array([-0.4, -0.2, 0.0, 0.2, 0.4])
+T_POINTS = np.array([0.05, 0.1, 0.25, 0.5, 1.0, 2.0])
+NK, NT = 5, 6
+\end{verbatim}
+
+→ tu définis une grille \textbf{fixe} pour l’entraînement.
+
+\subsubsection*{IX.2.2 — Sampling des paramètres Heston}
+
+\begin{verbatim}
+kappa ~ LogUniform[0.5, 8]
+theta ~ LogUniform[0.01, 0.08]
+sigma ~ LogUniform[0.1, 1.0]
+rho   ~ [-0.95, 0.2] via Beta(2,2)
+v0    ~ LogUniform[0.01, 0.08]
+\end{verbatim}
+
+→ couverture de nombreux régimes volatils.
+
+\subsubsection*{IX.2.3 — Générateur de surfaces Heston-like}
+
+Sketche :
+
+\begin{verbatim}
+KK, TT = np.meshgrid(K_POINTS, T_POINTS)
+var_t = theta + (v0 - theta) * exp(-kappa * T)
+iv_level = sqrt(var_t)
+
+skew = rho * K / sqrt(1 + T)
+curvature = sigma * K^2
+
+iv = max(iv_level + skew + curvature, 1e-4)
+w = iv^2 * T  # variance totale
+\end{verbatim}
+
+Ce n’est pas un vrai Heston semi-analytique, mais un \textbf{proxy géométrique} suffisant pour:
+
+\begin{itemize}
+    \item générer des surfaces cohérentes
+    \item apprendre le mapping inverse.
+\end{itemize}
+
+\subsubsection*{IX.2.4 — Dataset synthétique (\texttt{HestonInverseDataset})}
+
+Pour chaque sample i :
+
+\begin{itemize}
+    \item \texttt{params[i]} : \texttt{[5]}
+    \item \texttt{surfaces[i]} : \texttt{[NK,NT]} (\texttt{w})
+    \item \texttt{surfaces\_norm} : \texttt{(w - mean\_w) / std\_w}
+    \item \texttt{params\_scaled} : \texttt{(params - mean) / std}
+\end{itemize}
+
+Le \texttt{\_\_getitem\_\_} retourne :
+
+\begin{verbatim}
+x = w_norm[None, :, :]  # [1,NK,NT]
+y = params_scaled       # [5]
+w_true_norm = w_norm    # [NK,NT]
+\end{verbatim}
+
+\bigskip
+
+\subsubsection*{IX.2.5 — Loss et training loop}
+
+Loss totale :
+
+\[
+\mathcal{L} = \mathcal{L}_{params} + \lambda \mathcal{L}_{recon}
+\]
+
+où :
+
+\begin{itemize}
+    \item \texttt{L\_params = SmoothL1(params\_pred, y)}
+    \item \texttt{L\_recon = MSE(surface\_pred, w\_true\_norm)}
+\end{itemize}
+
+\texttt{w\_recon} = λ = 0.3 typiquement.
+
+Training :
+
+\begin{itemize}
+    \item Optimiseur : AdamW, lr=3e-4
+    \item 30 epochs (tu peux augmenter)
+    \item best model stocké avec :
+    \begin{itemize}
+        \item \texttt{model\_state\_dict}
+        \item \texttt{param\_mean}, \texttt{param\_std}
+        \item \texttt{w\_mean}, \texttt{w\_std}
+        \item \texttt{K\_POINTS}, \texttt{T\_POINTS}
+    \end{itemize}
+\end{itemize}
+
+Checkpoint : \texttt{models/heston\_inverse\_synth.pt}.
+
+\textbf{Après ça}, tu as un inverseur Heston cohérent, capable de :
+
+\begin{itemize}
+    \item prendre une surface synthétique
+    \item sortir des paramètres Heston
+    \item reconstruire une surface approximative.
+\end{itemize}
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{IX.3 — Fine-tuning sur données réelles Deribit (\texttt{RealIvSurfaceDataset} + \texttt{train\_heston\_real.py})}
+
+\subsubsection*{IX.3.1 — \texttt{RealIvSurfaceDataset}}
+
+Tu sauves d’abord des snapshots \texttt{.npz} comme :
+
+\begin{verbatim}
+np.savez("data/deribit_surfaces/BTC_iv_1234567890.npz",
+         iv_surface=iv_surface,
+         k_grid=k_grid,
+         t_grid=t_grid,
+         spot=spot,
+         timestamp=timestamp)
+\end{verbatim}
+
+\texttt{RealIvSurfaceDataset} :
+
+\begin{itemize}
+    \item liste tous les \texttt{.npz} du répertoire
+    \item lit \texttt{iv\_surface}
+    \item calcule \texttt{iv\_mean}, \texttt{iv\_std} global
+    \item renvoie pour chaque sample :
+\end{itemize}
+
+\begin{verbatim}
+iv_norm = (iv_surface - iv_mean) / iv_std
+x = iv_norm[None,:,:]   # [1,NK,NT]
+y_dummy = zeros(5)
+\end{verbatim}
+
+→ On n’a pas de labels sur les paramètres, on est en \textbf{self-supervised}.
+
+\subsubsection*{IX.3.2 — Fine-tuning (\texttt{train\_heston\_real.py})}
+
+\textbf{Objectif :}
+prendre le modèle pré-entraîné sur synthétique,
+et l’adapter aux vraies surfaces Deribit.
+
+Procédure :
+
+\begin{enumerate}
+    \item Charger \texttt{InverseHestonModel}
+    \item Charger les poids \texttt{heston\_inverse\_synth.pt}
+    \item Désactiver éventuellement le training des têtes de paramètres :
+\end{enumerate}
+
+\begin{verbatim}
+if not train_param_heads:
+    for name,p in model.named_parameters():
+        if "head_" in name:
+            p.requires_grad = False
+\end{verbatim}
+
+\begin{enumerate}
+    \setcounter{enumi}{3}
+    \item Optimiser uniquement la \textbf{reconstruction} :
+\end{enumerate}
+
+\begin{verbatim}
+params_pred, surf_pred = model(xb)  # surfaces réelles normalisées
+loss = MSE(surf_pred.squeeze(1), xb.squeeze(1))
+\end{verbatim}
+
+\begin{enumerate}
+    \setcounter{enumi}{4}
+    \item Plusieurs epochs sur les surfaces réelles.
+    \item Sauvegarde d’un nouveau checkpoint :
+    \texttt{models/heston\_inverse\_real.pt}.
+\end{enumerate}
+
+Cela donne un modèle où :
+
+\begin{itemize}
+    \item le latent et le décodeur de surface sont adaptés aux surfaces IV réelles,
+    \item les têtes de paramètres sont soit figées (pré-training synthé), soit affinées.
+\end{itemize}
+
+\textbf{Avantage :}
+
+\begin{itemize}
+    \item ton modèle “comprend” la géométrie des surfaces Deribit
+    \item tout en restant structuré par l’entraînement synthétique (qui donne une structure Heston-like).
+\end{itemize}
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{IX.4 — Entraînement mixte (synthétique + réel) (\texttt{mixed\_heston\_trainer.py})}
+
+Pour aller plus loin :
+
+Tu veux un modèle qui :
+
+\begin{enumerate}
+    \item garde la supervision complète sur des surfaces synthétiques (où tu connais les paramètres exacts)
+    \item mais apprend la géométrie des surfaces réelles en parallèle
+\end{enumerate}
+
+\subsubsection*{IX.4.1 — Setup}
+
+\begin{itemize}
+    \item \texttt{HestonInverseDataset} synthétique
+    \item \texttt{RealIvSurfaceDataset} réel
+    \item DataLoader pour les deux
+\end{itemize}
+
+\subsubsection*{IX.4.2 — Boucle d’entraînement}
+
+Pour chaque batch synthétique :
+
+\begin{enumerate}
+    \item On prend un batch synthétique \texttt{(xb\_s, yb\_s, wb\_s)}
+    \item On prend un batch réel \texttt{(xb\_r, \_)}
+    \item On passe les deux dans le modèle :
+\end{enumerate}
+
+\begin{verbatim}
+params_s, surf_s = model(xb_s)
+_, surf_r = model(xb_r)
+\end{verbatim}
+
+\begin{enumerate}
+    \setcounter{enumi}{3}
+    \item On calcule :
+\end{enumerate}
+
+\[
+\mathcal{L} = \mathcal{L}_{params}^{synth} + \lambda_s \mathcal{L}_{recon}^{synth} + \lambda_r \mathcal{L}_{recon}^{real}
+\]
+
+Avec :
+
+\begin{itemize}
+    \item \texttt{Lp = SmoothL1(params\_s, yb\_s)}
+    \item \texttt{Lr\_s = MSE(surf\_s, wb\_s)}
+    \item \texttt{Lr\_r = MSE(surf\_r, xb\_r.squeeze(1))}
+\end{itemize}
+
+\begin{enumerate}
+    \setcounter{enumi}{4}
+    \item Backward + step.
+\end{enumerate}
+
+Tu obtiens un modèle :
+
+\begin{itemize}
+    \item \textbf{Heston-consistent} (grâce au synthétique)
+    \item \textbf{Deribit-consistent} (grâce au réel)
+\end{itemize}
+
+Checkpoint : \texttt{models/heston\_inverse\_mixed.pt}.
+
+C’est probablement ta meilleure option à terme.
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{IX.5 — Intégration dans le FeatureEngine}
+
+Une fois ton inverseur entraîné (synth, real ou mixte), tu l’utilises dans :
+
+\begin{itemize}
+    \item \texttt{BtcHestonFeatureModule} (pour surfaces IV réelles, \texttt{K\_POINTS}, \texttt{T\_POINTS} alignés)
+    \item \texttt{ShitcoinFeatureModule} (pour pseudo-surfaces moments)
+\end{itemize}
+
+C’est transparent : tout ce qui change, c’est le \texttt{ckpt\_path} lors du \texttt{load\_heston\_inverse\_model}.
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{IX.6 — Pourquoi ceci est très puissant}
+
+Tu es en train de faire ce que font les desks quant sérieux :
+
+\begin{itemize}
+    \item un modèle génératif \& inverse pour la vol (Heston),
+    \item entraîné hors-ligne sur données synthétiques,
+    \item adapté à des surfaces réelles,
+    \item qui produit un \textbf{embedding structurel} du marché,
+    \item que tu utilises dans des modèles RL / ML / risk.
+\end{itemize}
+
+Pour un projet perso, c’est \textbf{massivement au-dessus} de 99\% de ce qui traîne sur le web.
+```
+```latex
+\section{X — HESTON PRICER DIFFÉRENTIABLE \& CALIBRATION (LE LAB DE VOLATILITÉ)}
+
+Ce chapitre couvre la partie “pricing / calibration” que je t’ai ajoutée à ton lab :
+
+\begin{itemize}
+    \item un \textbf{pricer Heston différentiable} en PyTorch
+    \item un \textbf{squelette de calibration} via descente de gradient
+\end{itemize}
+
+Ce n’est pas directement nécessaire pour ton RL, mais c’est crucial pour :
+
+\begin{itemize}
+    \item tester ton inverseur Heston,
+    \item générer des surfaces synthétiques plus réalistes,
+    \item faire de la recherche sur la structure de vol,
+    \item calibrer des paramètres sur des surfaces réelles.
+\end{itemize}
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{X.1 — Char-fonction Heston différentiable (\texttt{models/heston\_pricer.py})}
+
+\subsubsection*{1) Rappel rapide : Heston en termes de char-fonction}
+
+Le modèle Heston donne une formule semi-analytique pour le prix d’option via la \textbf{char-fonction} du log-prix sous la mesure risque-neutre :
+
+\[
+\phi(u; T) = \mathbb{E}\big[ e^{iu \log S_T} \big]
+\]
+
+Dans Heston, la char-fonction s’écrit avec :
+
+\begin{itemize}
+    \item \(\kappa\) (mean-reversion de la variance)
+    \item \(\theta\) (level de variance de long terme)
+    \item \(\sigma\) (vol-of-vol)
+    \item \(\rho\) (corrélation)
+    \item \(v_0\) (variance initiale)
+\end{itemize}
+
+Et tu as des formules du type :
+
+\[
+d = \sqrt{(\kappa - \rho \sigma i u)^2 + \sigma^2 (i u + u^2)}
+\]
+
+etc.
+
+Le fichier \texttt{heston\_pricer.py} code tout ça en \textbf{\texttt{torch.complex128}} pour être différentiable.
+
+\subsubsection*{2) Fonction \texttt{heston\_charfunc\_torch}}
+
+Signature :
+
+\begin{verbatim}
+heston_charfunc_torch(
+    u, T, kappa, theta, sigma, rho, v0, r, q, logS0
+) -> φ(u)
+\end{verbatim}
+
+\begin{itemize}
+    \item \texttt{u} : tensore de fréquences
+    \item \texttt{T} : maturité
+    \item \texttt{r} : taux sans risque
+    \item \texttt{q} : dividende / taux de repo / convenience yield
+    \item \texttt{logS0} : log spot
+\end{itemize}
+
+Retourne :
+
+\begin{itemize}
+    \item \(\phi(u)\) complexe, torch, compatible autograd.
+\end{itemize}
+
+\subsubsection*{3) Calcul technique}
+
+Dans le code, tu as :
+
+\begin{itemize}
+    \item \texttt{alpha}, \texttt{beta}, \texttt{gamma}
+    \item \(d = \sqrt{\beta^2 - 4 \alpha \gamma}\)
+    \item \(g = (\beta - d) / (\beta + d)\)
+    \item \(C(T,u)\) et \(D(T,u)\)
+\end{itemize}
+
+Puis :
+
+\[
+\phi(u) = \exp\left(C + D v_0 + i u \big(\log S_0 + (r - q)T\big)\right)
+\]
+
+Cette fonction est 100\% différentiable par rapport à tous ses inputs.
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{X.2 — Prix du call Heston (\texttt{heston\_call\_price\_torch})}
+
+Pour le call européen, on utilise la formule classique (type Heston) :
+
+\[
+C = S_0 e^{-q T} P_1 - K e^{-r T} P_2
+\]
+
+où :
+
+\[
+P_j = \frac{1}{2} + \frac{1}{\pi} \int_0^{\infty}
+\Re\left( e^{-iu \ln K} \frac{f_j(u)}{i u} \right) du
+\]
+
+Avec :
+
+\[
+f_1(u) = \frac{\phi(u - i)}{S_0 e^{(r-q)T}}, \qquad
+f_2(u) = \frac{\phi(u)}{S_0 e^{(r-q)T}}
+\]
+
+La fonction \texttt{heston\_call\_price\_torch} :
+
+\begin{itemize}
+    \item construit une grille \texttt{u} entre \texttt{0} et \texttt{u\_max},
+    \item calcule \texttt{phi1} et \texttt{phi2} pour cette grille,
+    \item calcule les intégrales par la méthode des trapèzes (\texttt{torch.trapz}),
+    \item renvoie une matrice de prix \texttt{[NK,NT]} pour un vecteur de strikes K et T.
+\end{itemize}
+
+\subsubsection*{Signature :}
+
+\begin{verbatim}
+heston_call_price_torch(
+    S0: float,
+    K: torch.Tensor,  # [NK]
+    T: torch.Tensor,  # [NT]
+    r: float,
+    q: float,
+    params: (kappa, theta, sigma, rho, v0),
+    n_integration: int = 256,
+    u_max: float = 100.0,
+) -> torch.Tensor  # [NK,NT]
+\end{verbatim}
+
+Ce pricer :
+
+\begin{itemize}
+    \item est entièrement en torch
+    \item supporte autograd
+    \item est suffisant pour faire des calibrations locales ou de la recherche.
+\end{itemize}
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{X.3 — Calibration Heston via gradient descent (\texttt{calibration/heston\_calibration.py})}
+
+Le but :
+pour une surface de prix “market” donnée, trouver des paramètres Heston \((\kappa,\theta,\sigma,\rho,v_0)\) qui minimisent :
+
+\[
+\mathcal{L} = \frac{1}{N} \sum_{i,j} \big(C^{model}(K_i,T_j) - C^{market}(K_i,T_j)\big)^2
+\]
+
+\subsubsection*{Fonctions principales}
+
+\texttt{calibrate\_heston\_torch} :
+
+\begin{itemize}
+    \item convertit les données de marché en tenseurs torch
+    \item initialise des paramètres Heston
+    \item boucle gradient descent/Adam
+    \item projette les paramètres dans des bornes raisonnables
+    \item affiche la trajectoire de la loss et des paramètres
+\end{itemize}
+
+Pendant chaque itération :
+
+\begin{enumerate}
+    \item \texttt{model\_price = heston\_call\_price\_torch(...)}
+    \item \texttt{loss = MSE(model\_price, market\_price)}
+    \item \texttt{loss.backward()}
+    \item \texttt{opt.step()}
+    \item clamp des paramètres (ex : \(\theta>0\), \(|\rho|<1\), etc.)
+\end{enumerate}
+
+\subsubsection*{Attention volontaire}
+
+Je t’ai mis un placeholder pour \texttt{market\_price} à partir des IV :
+
+\begin{verbatim}
+market_price = market_iv * 0.0  # à remplacer
+\end{verbatim}
+
+Dans une calibration réelle :
+
+\begin{itemize}
+    \item soit tu calcules le prix market via \textbf{Black-Scholes} à partir de l’IV,
+    \item soit tu calibres directement sur IV (plus complexe, car il faut faire l’inversion price→IV pour Heston).
+\end{itemize}
+
+Ce code te donne la \textbf{structure} de la calibration différentiable, mais tu dois :
+
+\begin{itemize}
+    \item ajouter un BS propre (si tu veux calibrer sur prix),
+    \item ou modifier la loss pour travailler sur IV (après inversion Heston).
+\end{itemize}
+```
+```latex
+\section{XI — COMMENT TOUT S’ASSEMBLE (FLUX COMPLETS)}
+
+Maintenant tu as vu chaque brique.
+On va les remonter ensemble en 3 flux :
+
+\begin{enumerate}
+    \item Flux RL complet
+    \item Flux training inverseur complet
+    \item Flux pricing/calibration complet
+\end{enumerate}
+
+Tu dois visualiser ça comme trois “pipelines parallèles” qui interagissent.
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{XI.1 — Flux RL complet (en réel)}
+
+Objectif : agent RL qui apprend à trader BTC/shitcoin en utilisant les signaux Heston, sentiment, etc.
+
+\subsubsection*{Étapes :}
+
+\begin{enumerate}
+    \item \textbf{Données marché}
+    
+    \begin{itemize}
+        \item Charger \texttt{RealMarketData} via \texttt{load\_real\_market\_data} (Binance + Deribit alignés)
+    \end{itemize}
+
+    \item \textbf{Initialisation FeatureEngine}
+    
+    \begin{itemize}
+        \item Charger inverseur Heston pré-entraîné \texttt{heston\_inverse\_mixed.pt}
+        \item Construire \texttt{FeatureEngine} avec :
+        \begin{itemize}
+            \item \texttt{ShitcoinFeatureModule} (pseudo-surface → inverseur Heston)
+            \item \texttt{BtcHestonFeatureModule} (IV Deribit → inverseur Heston)
+            \item \texttt{SentimentFeatureModule} (via SentimentProvider)
+            \item \texttt{GenericMarketFeatureModule} (OHLCV, etc.)
+        \end{itemize}
+    \end{itemize}
+
+    \item \textbf{StateBuilder}
+    
+    \begin{itemize}
+        \item \texttt{StateBuilder(dim=D, window=16)}
+    \end{itemize}
+
+    \item \textbf{TradingEnv}
+    
+    \begin{itemize}
+        \item \texttt{TradingEnv(market=RealMarketData, feature\_engine=fe, state\_builder=sb, config=...)}
+        \item reward via \texttt{RewardEngine} (PnL + drawdown + leverage + turnover)
+    \end{itemize}
+
+    \item \textbf{PPO Agent}
+    
+    \begin{itemize}
+        \item \texttt{PPOAgent(obs\_dim=16*D)}
+    \end{itemize}
+
+    \item \textbf{Boucle d’apprentissage}
+    
+    \begin{itemize}
+        \item For \texttt{t = 0..T}:
+        \begin{itemize}
+            \item \texttt{obs → agent.act(obs) → action}
+            \item \texttt{env.step(action)}
+            \item stocker trajectoire
+        \end{itemize}
+        \item Après \texttt{rollout\_len} steps, \texttt{agent.update(buf)}
+    \end{itemize}
+
+    \item \textbf{Backtest}
+    
+    \begin{itemize}
+        \item \texttt{equity\_history}
+        \item \texttt{compute\_pnl\_stats(equity\_curve)}
+    \end{itemize}
+\end{enumerate}
+
+Résultat : \\
+Tu as un agent RL qui apprend des politiques conditionnées sur :
+
+\begin{itemize}
+    \item régimes de vol (via inverseur Heston)
+    \item structure IV BTC
+    \item dynamiques shitcoin en “style Heston”
+    \item sentiment
+    \item vol réalisée
+    \item microstructure
+\end{itemize}
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{XI.2 — Flux training inverseur complet}
+
+Objectif : obtenir un inverseur Heston robuste.
+
+\subsubsection*{Étape 1 : Synthétique uniquement (pré-training)}
+
+\begin{itemize}
+    \item \texttt{train\_inverse\_heston.py}
+    \item Dataset \texttt{HestonInverseDataset}
+    \item Loss = param + recon
+    \item Sortie : \texttt{models/heston\_inverse\_synth.pt}
+\end{itemize}
+
+\subsubsection*{Étape 2 : Réel seul (fine-tuning reconstruction)}
+
+\begin{itemize}
+    \item Récupérer surfaces Deribit via \texttt{deribit\_scraper.py}
+    \item Stocker dans \texttt{data/deribit\_surfaces/*.npz}
+    \item \texttt{RealIvSurfaceDataset}
+    \item \texttt{train\_heston\_real.py}
+    \item Loss = recon only
+    \item Sortie : \texttt{models/heston\_inverse\_real.pt}
+\end{itemize}
+
+\subsubsection*{Étape 3 : Mix synthétique + réel}
+
+\begin{itemize}
+    \item \texttt{mixed\_heston\_trainer.py}
+    \item Mélange synth/real dans la même training loop
+    \item Loss = L\_param(synth) + L\_recon(synth) + L\_recon(real)
+    \item Sortie : \texttt{models/heston\_inverse\_mixed.pt}
+\end{itemize}
+
+C’est ce modèle mixte qui est en général \textbf{le plus robuste}.
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{XI.3 — Flux pricing/calibration}
+
+Objectif : calibrer/étudier Heston pour des surfaces particulières.
+
+\subsubsection*{1. À partir d’une surface IV de marché}
+
+\begin{itemize}
+    \item \texttt{market\_iv[K,T]}
+    \item \texttt{K\_grid}, \texttt{T\_grid}, \texttt{S0}, \texttt{r}, \texttt{q}
+\end{itemize}
+
+\subsubsection*{2. Calibration :}
+
+\begin{itemize}
+    \item Convertir IV → prix (via BS ou approximation)
+    \item Appeler \texttt{calibrate\_heston\_torch}
+    \item Obtenir :
+\end{itemize}
+
+\[
+(\hat\kappa,\hat\theta,\hat\sigma,\hat\rho,\hat v_0)
+\]
+
+\subsubsection*{3. Étude :}
+
+\begin{itemize}
+    \item Forward pricing via \texttt{heston\_call\_price\_torch}
+    \item Comparer surfaces calibrées vs marché
+    \item Tester la stabilité de l’inverseur Heston NN vs calibration numérique torch
+\end{itemize}
+```
+```latex
+\section{XII — CONCLUSION : CE QUE TU AS, CE QUE TU DOIS FAIRE}
+
+\subsection{XII.1 — Ce que tu possèdes maintenant}
+
+Tu as, dans ce projet :
+
+\begin{enumerate}
+    \item \textbf{Un framework RL complet}
+    \begin{itemize}
+        \item Environnement de trading
+        \item PPO agent
+        \item Backtester
+        \item FeatureEngine modulaire
+        \item StateBuilder temporel
+    \end{itemize}
+
+    \item \textbf{Un lab de volatilité Heston complet}
+    \begin{itemize}
+        \item Génération de surfaces synthétiques
+        \item Inverseur Heston CNN + reconstruction
+        \item Training synthétique
+        \item Fine-tuning réel (Deribit)
+        \item Training mixte
+        \item Pricer Heston différentiable
+        \item Calibration torch (squelette)
+    \end{itemize}
+
+    \item \textbf{Un début de pipeline data réel}
+    \begin{itemize}
+        \item Binance (spot, futures, funding)
+        \item Deribit (IV surface snapshots)
+        \item Alignement temporel
+        \item Construction de \texttt{RealMarketData}
+    \end{itemize}
+
+    \item \textbf{Des modules avancés}
+    \begin{itemize}
+        \item RewardEngine risk-adjusted
+        \item SentimentProvider (squelette)
+        \item LiveTrading skeleton (à connecter à binance/deribit API)
+    \end{itemize}
+\end{enumerate}
+
+C’est un \textbf{véritable framework de recherche quant sur vol \& RL}, pas un jouet.
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{XII.2 — Ce que tu dois faire concrètement (roadmap)}
+
+Si tu veux le rendre utile, ton plan logique :
+
+\subsubsection*{Étape 1 : Inverseur Heston}
+
+\begin{enumerate}
+    \item Lancer \texttt{train\_inverse\_heston.py} (synth)
+    \item Scraper quelques centaines de surfaces Deribit
+    \item Lancer \texttt{train\_heston\_real.py} ou \texttt{mixed\_heston\_trainer.py}
+    \item Inspecter la qualité de reconstructions
+\end{enumerate}
+
+Tant que ça n’est pas solide, \textbf{n’avance pas}.
+
+\bigskip
+
+\subsubsection*{Étape 2 : Données réelles}
+
+\begin{enumerate}
+    \item Charger des séries Binance (BTC + 1–2 shitcoins)
+    \item Alignement temporel propre
+    \item Construire un \texttt{RealMarketData}
+    \item Adapter \texttt{TradingEnv} pour consommer \texttt{RealMarketData}
+\end{enumerate}
+
+\bigskip
+
+\subsubsection*{Étape 3 : RL sur réelles}
+
+\begin{enumerate}
+    \item Brancher \texttt{RealMarketData} dans \texttt{train\_ppo.py}
+    \item Remplacer reward par \texttt{RewardEngine}
+    \item Lancer un training RL
+    \item Analyser la distribution des actions, equity, Sharpe, DD
+\end{enumerate}
+
+\bigskip
+
+\subsubsection*{Étape 4 : Améliorations}
+
+\begin{itemize}
+    \item Ajouter un vrai modèle de sentiment (Twitter / TG)
+    \item Ajouter un vrai pricer BS pour la calibration torch
+    \item Ajouter un logging sérieux (TensorBoard / wandb)
+    \item Séparer train/test dans le temps (éviter overfitting sur une période)
+    \item Tester d’autres algos RL (SAC, TD3, PPO recurrent, etc.)
+\end{itemize}
+
+\bigskip
+\hrule
+\bigskip
+
+\subsection{XII.3 — Comment l’utiliser comme “montrer que je suis sérieux” (cv / master / thèse)}
+
+Ce framework est idéal pour :
+
+\begin{itemize}
+    \item montrer que tu comprends :
+    \begin{itemize}
+        \item Heston
+        \item surfaces IV
+        \item calibration
+        \item RL appliqué au trading
+        \item ingestion de données marché
+        \item engineering “propre” de features
+    \end{itemize}
+
+    \item produire :
+    \begin{itemize}
+        \item un rapport technique
+        \item un article de recherche perso
+        \item un dépôt GitHub structuré
+    \end{itemize}
+\end{itemize}
+
+Tu peux :
+
+\begin{itemize}
+    \item présenter l’architecture globale,
+    \item montrer tes résultats sur un backtest Deribit/Binance,
+    \item montrer des reconstructions de surfaces par l’inverseur,
+    \item montrer comment les régimes Heston influencent la politique RL.
+\end{itemize}
+
+C’est exactement le type de projet qui fait la différence quand tu parles à un desk vol ou à une école type M2 203 / X-HEC.
+
+\bigskip
+
+
+```
