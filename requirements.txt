@@ -3,3 +3,6 @@ torch
 gymnasium
 matplotlib
 tqdm
+ccxt
+requests
+pandas

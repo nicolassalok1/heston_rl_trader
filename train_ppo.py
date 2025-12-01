@@ -5,7 +5,7 @@ import torch
 from models.heston_inverse_model import load_heston_inverse_model
 from features.feature_engine import create_default_feature_engine
 from features.state_builder import StateBuilder
-from data.simulated_data import simulate_market, SimMarketConfig
+from data.real_market_loader import load_real_market_data
 from env.trading_env import TradingEnv, TradingEnvConfig
 from rl.ppo_agent import PPOAgent, PPOConfig, compute_gae
 from backtester import compute_pnl_stats
@@ -16,11 +16,11 @@ def train_ppo(
     rollout_len: int = 2048,
 ):
 
-    market = simulate_market(SimMarketConfig(n_steps=total_steps + 5000))
+    market = load_real_market_data()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    btc_model = load_heston_inverse_model(nk=5, nt=4, ckpt_path=None, device=device)
-    shit_model = load_heston_inverse_model(nk=3, nt=4, ckpt_path=None, device=device)
+    btc_model = load_heston_inverse_model(nk=5, nt=4, ckpt_path="models/btc_heston.ckpt", device=device)
+    shit_model = load_heston_inverse_model(nk=3, nt=4, ckpt_path="models/shit_heston.ckpt", device=device)
 
     fe = create_default_feature_engine(
         shitcoin_heston_inverse=shit_model,
