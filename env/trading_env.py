@@ -9,6 +9,8 @@ from gymnasium import spaces
 from features.feature_engine import FeatureEngine
 from features.state_builder import StateBuilder
 from data.simulated_data import SimMarketData
+from rl.reward import RewardEngine, RewardConfig
+from sentiment.sentiment_module import SentimentProvider
 
 
 @dataclass
@@ -35,6 +37,8 @@ class TradingEnv(gym.Env):
         self.fe = feature_engine
         self.sb = state_builder
         self.cfg = config
+        self.sentiment_provider = SentimentProvider()
+        self.reward_engine = RewardEngine(RewardConfig())
 
         self.action_space = spaces.Box(
             low=-1.0, high=1.0, shape=(1,), dtype=np.float32
@@ -66,9 +70,8 @@ class TradingEnv(gym.Env):
         k_grid = self.market.k_grid
         t_grid = self.market.t_grid
 
-        sentiment_score = 0.0
-        msg_rate = 0.0
-        fear_greed = 0.0
+        snap = self.sentiment_provider.fetch_snapshot()
+        sent_ctx = self.sentiment_provider.to_feature_dict(snap)
 
         close_price = self.market.btc_prices[t]
         high_price = close_price
@@ -91,11 +94,7 @@ class TradingEnv(gym.Env):
                 "k_grid": k_grid,
                 "t_grid": t_grid,
             },
-            "sentiment": {
-                "sentiment_score": sentiment_score,
-                "msg_rate": msg_rate,
-                "fear_greed": fear_greed,
-            },
+            "sentiment": sent_ctx,
             "generic": {
                 "close": close_price,
                 "high": high_price,
@@ -127,6 +126,7 @@ class TradingEnv(gym.Env):
         self.position = 0.0
         self.cash = self.cfg.initial_capital
         self.last_price = float(self.market.btc_prices[self.t])
+        self.reward_engine.reset()
 
         obs = self._get_state()
         info = {}
@@ -144,6 +144,7 @@ class TradingEnv(gym.Env):
             self.done = True
         price_tp1 = float(self.market.btc_prices[self.t])
 
+        position_prev = self.position
         equity = self.cash + self.position * price_t
 
         target_position_value = a * equity
@@ -156,7 +157,13 @@ class TradingEnv(gym.Env):
         self.position = target_position
 
         new_equity = self.cash + self.position * price_tp1
-        reward = (new_equity - equity) / self.cfg.initial_capital
+        reward = self.reward_engine.compute_reward(
+            equity_prev=equity,
+            equity_now=new_equity,
+            position_prev=position_prev,
+            position_now=target_position,
+            price=price_t,
+        )
 
         obs = self._get_state()
         info = {
