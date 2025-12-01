@@ -109,7 +109,8 @@ def load_heston_inverse_model(
         return model
 
     model = InverseHestonModel(nk, nt, hidden_dim=128).to(device)
-    state = torch.load(ckpt_path, map_location=device)
+    # PyTorch >=2.6 defaults to weights_only=True which breaks older checkpoints.
+    state = torch.load(ckpt_path, map_location=device, weights_only=False)
     if "model_state_dict" in state:
         model.load_state_dict(state["model_state_dict"])
     else:

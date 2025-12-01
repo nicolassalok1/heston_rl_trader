@@ -14,7 +14,22 @@ if (-not (Test-Path $venvPython)) {
 Write-Host "Using Python at $venvPython" -ForegroundColor Cyan
 
 Write-Host "`n[1/3] Syntax check (compileall)..." -ForegroundColor Cyan
-& $venvPython -m compileall .
+$pathsToCheck = @(
+    'backtester.py',
+    'live_trading.py',
+    'train_ppo.py',
+    'train_inverse_heston.py',
+    'train_heston_real.py',
+    'env',
+    'features',
+    'models',
+    'rl',
+    'data',
+    'calibration',
+    'training',
+    'sentiment'
+)
+& $venvPython -m compileall -q @pathsToCheck
 
 Write-Host "`n[2/3] Smoke test: Heston pricer..." -ForegroundColor Cyan
 @'
@@ -44,6 +59,7 @@ Write-Host "`n[3/3] Smoke test: TradingEnv with simulated data..." -ForegroundCo
 @'
 import numpy as np
 import torch
+from pathlib import Path
 from data.simulated_data import simulate_market, SimMarketConfig
 from models.heston_inverse_model import load_heston_inverse_model
 from features.feature_engine import create_default_feature_engine
@@ -53,8 +69,21 @@ from env.trading_env import TradingEnv, TradingEnvConfig
 device = torch.device("cpu")
 
 market = simulate_market(SimMarketConfig(n_steps=200))
-btc_model = load_heston_inverse_model(nk=5, nt=4, ckpt_path=None, device=device)
-shit_model = load_heston_inverse_model(nk=3, nt=4, ckpt_path=None, device=device)
+
+# Use real checkpoints when available (btc uses the synthetic-trained inverse here).
+btc_ckpt = Path("models/heston_inverse_synth.pt")
+if not btc_ckpt.exists():
+    raise SystemExit(f"Missing BTC inverse checkpoint: {btc_ckpt}")
+btc_model = load_heston_inverse_model(
+    nk=5,
+    nt=6,  # checkpoint trained on 5x6 grid
+    ckpt_path=str(btc_ckpt),
+    device=device,
+)
+
+# Keep shitcoin on the dummy inverse unless you have a matching checkpoint (nk=3, nt=4).
+shit_ckpt = None
+shit_model = load_heston_inverse_model(nk=3, nt=4, ckpt_path=shit_ckpt, device=device)
 fe = create_default_feature_engine(
     shitcoin_heston_inverse=shit_model,
     btc_heston_inverse=btc_model,
