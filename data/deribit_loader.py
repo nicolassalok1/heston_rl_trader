@@ -4,6 +4,8 @@ import requests
 import numpy as np
 import pandas as pd
 from typing import Tuple, List, Dict
+from pathlib import Path
+from datetime import datetime, timezone
 
 
 DERIBIT_API = "https://www.deribit.com/api/v2"
@@ -35,6 +37,8 @@ def build_iv_surface(
     currency: str = "BTC",
     maturities_max: int = 4,
     strikes_per_maturity: int = 5,
+    save: bool = True,
+    output_dir: str = "data/deribit_surfaces",
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Construit une surface IV brutale (exemple) :
@@ -79,6 +83,7 @@ def build_iv_surface(
     NT = len(t_grid)
     iv_surface = np.zeros((NK, NT), dtype=np.float32)
 
+    spot_price = None
     for j, T in enumerate(t_grid):
         df_t = rows[j]
         if df_t.empty:
@@ -87,11 +92,56 @@ def build_iv_surface(
             idx = (df_t["k"] - k).abs().idxmin()
             inst = df_t.loc[idx, "instrument_name"]
             ob = fetch_orderbook(inst)
+            if spot_price is None:
+                spot_price = ob.get("underlying_price") or ob.get("index_price") or ob.get("mark_price")
             iv = ob.get("mark_iv", None)
             if iv is None:
                 iv = 0.0
             iv_surface[i, j] = float(iv) / 100.0  # Deribit donne en %
+
+    if spot_price is None:
+        spot_price = 0.0
+    spot_price = float(spot_price)
+
+    if save:
+        ts = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+        _save_surface_npz(
+            iv_surface=iv_surface,
+            k_grid=k_grid,
+            t_grid=t_grid,
+            spot=spot_price,
+            timestamp=ts,
+            output_dir=output_dir,
+        )
     return iv_surface, k_grid, t_grid
 
 
 #C’est volontairement simplifié. Pour de la prod, tu feras un cache local ou un loader batch.
+
+
+def _save_surface_npz(
+    iv_surface: np.ndarray,
+    k_grid: np.ndarray,
+    t_grid: np.ndarray,
+    spot: float,
+    timestamp: str,
+    output_dir: str,
+) -> str:
+    """
+    Sauvegarde une surface Deribit dans data/deribit_surfaces/ avec la structure demandée.
+    Le timestamp est conservé tel quel dans le fichier; on remplace les ':' du nom de fichier
+    pour rester compatible Windows.
+    """
+    out_dir = Path(output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    fname = f"{timestamp.replace(':', '-')}.npz"
+    path = out_dir / fname
+    np.savez(
+        path,
+        iv_surface=iv_surface,
+        k_grid=k_grid,
+        t_grid=t_grid,
+        spot=float(spot),
+        timestamp=timestamp,
+    )
+    return str(path)
