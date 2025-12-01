@@ -2,6 +2,9 @@
 from __future__ import annotations
 import numpy as np
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Sequence
+import pandas as pd
 
 from .binance_loader import load_binance_data
 from .deribit_loader import build_iv_surface
@@ -55,10 +58,11 @@ def load_real_market_data(
     shit_volumes = shit_df["volume_spot"].values.astype(np.float32)
     shit_funding = shit_df["funding_rate"].fillna(0.0).values.astype(np.float32)
 
-    # IV surface BTC: on prend UNE surface statique pour simplifier
-    iv_surface, k_grid, t_grid = build_iv_surface(currency="BTC")
-    # on la répète sur toute la série (à toi de la rendre time-varying après)
-    btc_iv_surface = np.repeat(iv_surface[None, :, :], len(btc_prices), axis=0)
+    if "iv_file" in btc_df.columns:
+        btc_iv_surface, k_grid, t_grid = _load_surfaces_from_iv_files(btc_df["iv_file"])
+    else:
+        iv_surface, k_grid, t_grid = build_iv_surface(currency="BTC")
+        btc_iv_surface = np.repeat(iv_surface[None, :, :], len(btc_prices), axis=0)
 
     return RealMarketData(
         btc_prices=btc_prices,
@@ -72,3 +76,44 @@ def load_real_market_data(
         shit_volumes=shit_volumes,
         shit_funding=shit_funding,
     )
+
+
+def _load_surfaces_from_iv_files(iv_files: Sequence) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Charge une surface IV par timestamp en lisant la colonne iv_file (chemins .npz).
+    Tous les fichiers doivent partager le même k_grid / t_grid. Si un fichier est
+    manquant ou vide, on réutilise la dernière surface chargée.
+    """
+    surfaces = []
+    k_grid = None
+    t_grid = None
+    last_surface = None
+
+    for f in iv_files:
+        if pd.isna(f) or not f:
+            if last_surface is None:
+                raise ValueError("iv_file manquant et aucune surface précédente disponible.")
+            surfaces.append(last_surface.copy())
+            continue
+
+        path = Path(str(f))
+        if not path.exists():
+            raise FileNotFoundError(f"Fichier IV introuvable: {path}")
+
+        with np.load(path) as data:
+            iv_surface = data["iv_surface"].astype(np.float32)
+            k = data["k_grid"].astype(np.float32)
+            t = data["t_grid"].astype(np.float32)
+
+        if k_grid is None:
+            k_grid = k
+            t_grid = t
+        else:
+            if k.shape != k_grid.shape or t.shape != t_grid.shape:
+                raise ValueError(f"k_grid/t_grid incompatibles dans {path}")
+
+        last_surface = iv_surface
+        surfaces.append(iv_surface)
+
+    btc_iv_surface = np.stack(surfaces, axis=0)
+    return btc_iv_surface, k_grid, t_grid
