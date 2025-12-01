@@ -19,8 +19,17 @@ def train_ppo(
     market = load_real_market_data()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    btc_model = load_heston_inverse_model(nk=5, nt=4, ckpt_path="models/btc_heston.ckpt", device=device)
-    shit_model = load_heston_inverse_model(nk=3, nt=4, ckpt_path="models/shit_heston.ckpt", device=device)
+    NK = market.k_grid.shape[0]
+    NT = market.t_grid.shape[0]
+    NK_shit = 3   # pseudo-surface rows (default maturities)
+    NT_shit = 4   # pseudo-surface columns (mean/std/skew/kurt)
+
+    btc_model = load_heston_inverse_model(
+        nk=NK, nt=NT, ckpt_path="models/heston_inverse_synth.pt", device=device
+    )
+    shit_model = load_heston_inverse_model(
+        nk=NK_shit, nt=NT_shit, ckpt_path="models/heston_inverse_synth.pt", device=device
+    )
 
     fe = create_default_feature_engine(
         shitcoin_heston_inverse=shit_model,

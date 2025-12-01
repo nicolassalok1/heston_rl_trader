@@ -1,8 +1,8 @@
-numpy
-torch
+ccxt
 gymnasium
 matplotlib
-tqdm
-ccxt
-requests
+numpy
 pandas
+requests
+torch
+tqdm

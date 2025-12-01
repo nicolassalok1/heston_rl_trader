@@ -11,3 +11,26 @@ Framework complet pour construire un agent de trading en Reinforcement Learning 
 
 Ce projet donne une architecture complète prête à raccorder à vos données réelles
 (perps, futures, orderbook, options Deribit, sentiment Telegram/Twitter).
+
+
+
+
+Quand tu passeras aux vraies surfaces IV (Deribit) et aux vraies séries spot (Binance) :
+
+tu te sers du même modèle (pré-entraîné synthétiquement),
+
+tu lui fais un fine-tuning sur tes vraies surfaces,
+
+ton dataset réel doit juste :
+
+ré-échantillonner sur une grille 
+(
+𝑘
+,
+𝑇
+)
+(k,T) cohérente,
+
+forward-fill / drop les points manquants,
+
+aligner les timestamps (timezone → UTC, puis offset Europe/Paris si tu veux visualiser).
