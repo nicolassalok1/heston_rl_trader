@@ -4,6 +4,7 @@ import torch
 from typing import Tuple
 
 from models.heston_pricer import heston_call_price_torch
+from models.black_scholes import bs_call_price_torch
 
 
 def calibrate_heston_torch(
@@ -32,13 +33,15 @@ def calibrate_heston_torch(
     T = T.to(device=device, dtype=dtype)
     market_iv = market_iv.to(device=device, dtype=dtype)
 
-    # convertit IV → prix via Black-Scholes approximatif
-    # pour éviter de recoder un BS complet, tu peux supposer:
-    from math import sqrt
-    # On va faire approx call ≈ 0.5 * S0 (rough). A toi d'améliorer.
-    # Pour une vraie calibration, remplace par un BS sérieux.
-    market_price = market_iv * 0.0  # placeholder gros sabot
-    # En pratique: code un BS ici.
+    # convertit IV → prix via Black-Scholes
+    market_price = bs_call_price_torch(
+        S0=S0,
+        K=K,
+        T=T,
+        iv=market_iv,
+        r=r,
+        q=q,
+    ).to(dtype)
 
     # paramètres init (log-space sauf rho)
     kappa = torch.tensor(1.5, device=device, dtype=dtype, requires_grad=True)
